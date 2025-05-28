@@ -1,0 +1,18 @@
+[
+  {
+    "id": "patient_001",
+    "name": "患者001 - ECG数据",
+    "data_type": "ecg",
+    "file_path": "data/processed/patient_001_ecg.csv",
+    "upload_time": "2025-05-28T06:47:06.141320",
+    "description": "心电图数据，包含12导联，采样频率100Hz，包含噪声和异常值"
+  },
+  {
+    "id": "patient_002",
+    "name": "患者002 - 机械通气数据",
+    "data_type": "mv",
+    "file_path": "data/processed/patient_002_mv.csv",
+    "upload_time": "2025-05-28T06:47:06.141334",
+    "description": "机械通气数据，包含压力、流量等参数，采样频率1Hz"
+  }
+]

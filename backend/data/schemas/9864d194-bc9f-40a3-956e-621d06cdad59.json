@@ -1,0 +1,13 @@
+{
+  "id": "9864d194-bc9f-40a3-956e-621d06cdad59",
+  "name": "test",
+  "description": "天",
+  "columns": [
+    {
+      "name": "test",
+      "type": "string"
+    }
+  ],
+  "created_at": "2025-05-28T21:50:06.476273",
+  "updated_at": "2025-05-28T21:50:06.476287"
+}

@@ -1,0 +1,31 @@
+fastapi
+uvicorn
+sqlalchemy # For database ORM
+# Add your specific database driver if not using SQLite, e.g.:
+# psycopg2-binary # For PostgreSQL
+# mysqlclient # For MySQL
+pydantic
+pydantic-settings # For loading .env and settings management
+pandas
+numpy
+plotly
+scipy
+scikit-learn
+python-multipart # For file uploads
+aiofiles # For async file operations
+tqdm # Progress bars
+
+# Security
+python-jose[cryptography] # For JWT
+passlib[bcrypt] # For password hashing
+
+# Asynchronous Tasks
+celery
+redis # Python client for Redis (used as Celery broker/backend)
+
+# Database Migrations
+alembic
+
+# Testing
+pytest
+httpx # For async testing of FastAPI endpoints

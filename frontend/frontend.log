@@ -1,0 +1,33 @@
+
+> medical-data-analysis-frontend@1.0.0 dev
+> vite
+
+
+  VITE v5.4.19  ready in 391 ms
+
+  ➜  Local:   http://localhost:3000/
+  ➜  Network: http://10.2.46.27:3000/
+  ➜  press h + enter to show help
+
+  #  Node.js[1492]: void node::ResetStdio() at ../src/node.cc:766
+  #  Assertion failed: !(err != 0) || (err == -1 && (*__errno_location ()) == 1)
+
+----- Native stack trace -----
+
+ 1: 0xf6ea57 node::Assert(node::AssertionInfo const&) [node]
+ 2: 0xf13e24  [node]
+ 3: 0x7f8787e5255d  [/lib/x86_64-linux-gnu/libc.so.6]
+ 4: 0x7f8787e5269a  [/lib/x86_64-linux-gnu/libc.so.6]
+ 5: 0xe6539f node::DefaultProcessExitHandlerInternal(node::Environment*, node::ExitCode) [node]
+ 6: 0xed1daf node::Environment::Exit(node::ExitCode) [node]
+ 7: 0x7f877fe0f5e2 
+
+  #  Node.js[1492]: void node::ResetStdio() at ../src/node.cc:766
+  #  Assertion failed: !(err != 0) || (err == -1 && (*__errno_location ()) == 1)
+
+----- Native stack trace -----
+
+ 1: 0xf6ea57 node::Assert(node::AssertionInfo const&) [node]
+ 2: 0xf13e24  [node]
+ 3: 0xf14542 node::TrapWebAssemblyOrContinue(int, siginfo_t*, void*) [node]
+ 4: 0x7f8787e50050  [/lib/x86_64-linux-gnu/libc.so.6]
