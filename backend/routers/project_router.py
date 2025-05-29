@@ -384,3 +384,25 @@ async def rollback_project_data_version(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to rollback data version.")
         
     return new_version_entry
+
+# --- Project Version History Endpoint ---
+from backend.crud import crud_version_history # Already imported if other version endpoints exist, ensure it is
+# from typing import List # Already imported if other list responses exist, ensure it is
+# from backend.models import schemas # Already imported, ensure VersionHistoryResponse is available
+
+@router.get("/{project_id}/versions", response_model=List[schemas.VersionHistoryResponse])
+def list_project_versions(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_active_user),
+    skip: int = 0,
+    limit: int = 100
+):
+    db_project = crud_project.get_project(db, project_id=project_id)
+    if not db_project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not current_user.is_superuser and db_project.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this project's versions")
+    
+    versions = crud_version_history.get_versions_by_project_id(db, project_id=project_id, skip=skip, limit=limit)
+    return versions

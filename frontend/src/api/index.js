@@ -179,6 +179,8 @@ export const projectAPI = {
     api.post(`/api/v1/projects/${projectId}/pipeline/run`, pipelineRequest),
   rollbackProjectDataVersion: (projectId, dataEntityId, sourceVersionNumber, rollbackRequest) => 
     api.post(`/api/v1/projects/${projectId}/data/${dataEntityId}/versions/${sourceVersionNumber}/rollback`, rollbackRequest),
+  getProjectVersions: (projectId, skip = 0, limit = 100) => 
+    api.get(`/api/v1/projects/${projectId}/versions?skip=${skip}&limit=${limit}`),
 };
 
 export default api

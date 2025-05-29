@@ -11,7 +11,11 @@
 
       <el-table :data="projects" v-loading="loading" style="width: 100%">
         <el-table-column prop="id" label="ID" width="80"></el-table-column>
-        <el-table-column prop="name" label="Name" width="200"></el-table-column>
+        <el-table-column label="Name" width="200">
+          <template #default="scope">
+            <router-link :to="`/projects/${scope.row.id}/data`">{{ scope.row.name }}</router-link>
+          </template>
+        </el-table-column>
         <el-table-column prop="description" label="Description"></el-table-column>
         <el-table-column prop="owner_id" label="Owner ID" width="120"></el-table-column>
         <el-table-column label="Created At" width="180">
@@ -24,15 +28,17 @@
             {{ formatDate(scope.row.updated_at) }}
           </template>
         </el-table-column>
-        <!-- Add more columns or actions as needed -->
-        <!-- 
-        <el-table-column label="Actions" width="180">
+        <el-table-column label="Actions" width="230">
           <template #default="scope">
-            <el-button size="small" @click="viewProject(scope.row.id)">View</el-button>
-            <el-button size="small" type="danger" @click="deleteProject(scope.row.id)">Delete</el-button>
+            <router-link :to="{ name: 'ProjectDataUpload', params: { projectId: scope.row.id } }">
+              <el-button size="small">Upload Data</el-button>
+            </router-link>
+            <router-link :to="{ name: 'ProjectDataList', params: { projectId: scope.row.id } }" style="margin-left: 5px;">
+              <el-button size="small" type="primary">View Data</el-button>
+            </router-link>
+            <!-- Add other actions like delete or edit project if needed -->
           </template>
         </el-table-column>
-        -->
       </el-table>
 
       <div v-if="error" class="error-message">

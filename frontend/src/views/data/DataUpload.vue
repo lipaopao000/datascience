@@ -3,7 +3,7 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>数据上传</span>
+          <span>{{ pageTitle }}</span>
           <el-button type="text" @click="showHelp = true">
             <el-icon><QuestionFilled /></el-icon>
             帮助
@@ -11,14 +11,19 @@
         </div>
       </template>
 
+      <div v-if="projectId" class="project-context-info">
+        <el-tag type="info">Project ID: {{ projectId }}</el-tag>
+      </div>
+
       <div class="upload-container">
         <el-upload
           ref="uploadRef"
           class="upload-demo"
           drag
-          :action="uploadAction"
+          :action="uploadAction" 
+          :http-request="handleCustomUpload" 
           :before-upload="beforeUpload"
-          :on-success="handleSuccess"
+          :on-success="handleSuccess" 
           :on-error="handleError"
           :on-progress="handleProgress"
           :on-change="handleFileChange"
@@ -38,9 +43,14 @@
           </template>
         </el-upload>
 
-        <el-form-item label="数据分组名称 (可选)" style="margin-top: 20px;">
+        <el-form-item label="数据分组名称 (可选)" style="margin-top: 20px;" v-if="!projectId">
           <el-input v-model="groupName" placeholder="输入分组名称" />
         </el-form-item>
+
+        <el-form-item label="上传备注 (可选)" style="margin-top: 20px;">
+          <el-input v-model="uploadNotes" type="textarea" placeholder="输入本次上传的备注信息" />
+        </el-form-item>
+
 
         <div class="upload-actions" v-if="fileList.length > 0">
           <el-button type="primary" @click="submitUpload" :loading="uploading">
@@ -72,13 +82,19 @@
             
             <div class="result-details" v-if="result.details">
               <el-descriptions :title="`文件: ${result.fileName}`" :column="2" border>
-                <el-descriptions-item label="数据文件数">
+                <el-descriptions-item label="数据文件数" v-if="result.details.patient_count !== undefined">
                   {{ result.details.patient_count }}
                 </el-descriptions-item>
-                <el-descriptions-item label="文件类型">
+                 <el-descriptions-item label="数据实体ID" v-if="result.details.data_entity_id">
+                  {{ result.details.data_entity_id }}
+                </el-descriptions-item>
+                <el-descriptions-item label="版本号" v-if="result.details.version_number !== undefined">
+                  {{ result.details.version_number }}
+                </el-descriptions-item>
+                <el-descriptions-item label="文件类型" v-if="result.details.file_info?.source">
                   {{ result.details.file_info?.source || '未知' }}
                 </el-descriptions-item>
-                <el-descriptions-item label="数据ID" v-if="result.details.file_info?.data_id">
+                <el-descriptions-item label="数据ID (旧)" v-if="result.details.file_info?.data_id">
                   {{ result.details.file_info.data_id }}
                 </el-descriptions-item>
                  <el-descriptions-item label="分组名称" v-if="result.details.file_info?.group_name">
@@ -141,136 +157,216 @@ data.zip
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { dataAPI } from '@/api'
+import { ref, computed } from 'vue';
+import { ElMessage } from 'element-plus';
+import { dataAPI, projectAPI } from '@/api'; // Ensure projectAPI is imported
 
-const uploadRef = ref()
-const fileList = ref([])
-const uploading = ref(false)
-const uploadProgress = ref(0)
-const progressStatus = ref('')
-const progressText = ref('')
-const uploadResults = ref([]) 
-const showHelp = ref(false)
-const groupName = ref('')
+const props = defineProps({
+  projectId: {
+    type: [String, Number],
+    required: false // Not required for generic upload
+  }
+});
 
-const uploadAction = 'http://localhost:8000/api/upload'
+const uploadRef = ref();
+const fileList = ref([]);
+const uploading = ref(false);
+const uploadProgress = ref(0);
+const progressStatus = ref('');
+const progressText = ref('');
+const uploadResults = ref([]); 
+const showHelp = ref(false);
+const groupName = ref('');
+const uploadNotes = ref(''); // For project-specific upload notes
+
+const pageTitle = computed(() => props.projectId ? `Upload Data to Project ${props.projectId}` : '数据上传');
+const uploadAction = 'http://localhost:8000/api/upload'; // Dummy action, as we use custom http-request
 
 // 上传前检查
 const beforeUpload = (file) => {
   const isValidType = file.type === 'application/zip' || 
                      file.type === 'text/csv' || 
                      file.name.endsWith('.zip') || 
-                     file.name.endsWith('.csv')
+                     file.name.endsWith('.csv');
   
   if (!isValidType) {
-    ElMessage.error('只支持 ZIP 和 CSV 文件格式')
-    return false
+    ElMessage.error('只支持 ZIP 和 CSV 文件格式');
+    return false;
   }
 
-  const isValidSize = file.size / 1024 / 1024 < 500
+  const isValidSize = file.size / 1024 / 1024 < 500;
   if (!isValidSize) {
-    ElMessage.error('文件大小不能超过 500MB')
-    return false
+    ElMessage.error('文件大小不能超过 500MB');
+    return false;
   }
+  return true;
+};
 
-  return true
-}
+// Custom upload handler
+const handleCustomUpload = async (options) => {
+  // This function will be called by el-upload when auto-upload is false and submitUpload is triggered.
+  // However, we are manually bundling files in submitUpload, so this might not be directly used
+  // unless el-upload's internal submit is triggered. For our case, we manage upload via projectAPI directly.
+  // For simplicity, we'll ensure submitUpload calls the correct API.
+  // This custom request can be left empty if submitUpload handles everything.
+  console.log('Custom HTTP request called, but we handle upload via submitUpload method.');
+  return Promise.resolve(); // Or reject if needed
+};
+
 
 // 开始上传
 const submitUpload = async () => {
-  console.log('submitUpload: function started');
   if (fileList.value.length === 0) {
-    ElMessage.warning('请先选择文件')
-    console.log('submitUpload: No file selected');
-    return
+    ElMessage.warning('请先选择文件');
+    return;
   }
 
-  uploading.value = true
-  uploadProgress.value = 0
-  progressStatus.value = ''
-  progressText.value = '准备上传...'
-  uploadResults.value = [] // Clear previous results
+  uploading.value = true;
+  uploadProgress.value = 0; // We might not have fine-grained progress for multiple files easily
+  progressStatus.value = '';
+  progressText.value = '准备上传...';
+  uploadResults.value = []; // Clear previous results
 
-  let totalFiles = fileList.value.length;
-  let filesToUpload = fileList.value.map(f => f.raw);
-  let fileNames = filesToUpload.map(f => f.name).join(', ');
+  const formData = new FormData();
+  fileList.value.forEach(fileObject => {
+    formData.append('files', fileObject.raw); // Ensure we append the raw file
+  });
+
+  if (props.projectId && uploadNotes.value) {
+    formData.append('notes', uploadNotes.value);
+  }
+  
+  // For generic upload, if not project specific
+  if (!props.projectId && groupName.value) {
+     // The generic dataAPI.uploadData expects groupName as a query param, not in FormData
+     // This part needs careful handling if generic upload is still to be supported alongside project upload.
+     // For now, focusing on project-specific upload if projectId is present.
+  }
+
+
   try {
-    console.log(`submitUpload: Uploading files`, filesToUpload, 'with groupName:', groupName.value);
-    const response = await dataAPI.uploadData(filesToUpload, groupName.value); 
-    console.log(`submitUpload: API response for files:`, response);
-    
-    uploadProgress.value = 100;
-    progressStatus.value = 'success';
-    progressText.value = `上传完成: ${response.patient_count} 个数据集成功处理`;
+    let response;
+    if (props.projectId) {
+      progressText.value = `正在上传到项目 ${props.projectId}...`;
+      response = await projectAPI.uploadProjectData(props.projectId, formData);
+       // Assuming response structure for project upload might be: { message: string, files: [...] }
+      // Update results based on this new structure
+      uploadProgress.value = 100;
+      progressStatus.value = 'success';
+      progressText.value = response.message || `${response.files?.length || 0} 文件处理完成。`;
 
-    response.file_info.uploaded_files_summary.forEach(fileSummary => {
-      uploadResults.value.push({
-        title: fileSummary.source === 'zip' ? 'ZIP文件处理成功' : 'CSV文件处理成功',
-        type: 'success',
-        description: `文件 ${fileSummary.file_name} 处理成功。数据ID: ${fileSummary.data_id || 'N/A'}`,
-        details: {
-          patient_count: fileSummary.source === 'zip' ? fileSummary.extracted_files : 1,
-          file_info: fileSummary
-        },
-        fileName: fileSummary.file_name
-      });
-    });
-    
-    ElMessage.success(response.message);
+      if (response.files && Array.isArray(response.files)) {
+        response.files.forEach(fileSummary => {
+            uploadResults.value.push({
+            title: `文件 ${fileSummary.file_name} 处理成功`,
+            type: 'success',
+            description: `数据实体ID: ${fileSummary.data_entity_id}, 版本: ${fileSummary.version_number}`,
+            details: fileSummary, // Contains data_entity_id, version_number, etc.
+            fileName: fileSummary.file_name
+          });
+        });
+      } else {
+         // Handle cases where 'files' might not be an array or present, e.g., single file upload response
+         uploadResults.value.push({
+            title: '上传完成',
+            type: 'success',
+            description: response.message || '操作成功完成。',
+            details: response, 
+            fileName: "N/A" 
+          });
+      }
+      ElMessage.success(response.message || '上传成功！');
 
+    } else {
+      // Fallback to generic upload if projectId is not present
+      progressText.value = '正在上传...';
+      // Note: dataAPI.uploadData takes (filesArray, groupName)
+      // filesToUpload should be an array of File objects, not FormData
+      const filesToUpload = fileList.value.map(f => f.raw);
+      response = await dataAPI.uploadData(filesToUpload, groupName.value);
+      
+      // Existing result handling for generic upload
+      uploadProgress.value = 100;
+      progressStatus.value = 'success';
+      progressText.value = `上传完成: ${response.patient_count || (response.file_info ? response.file_info.uploaded_files_summary.length : 0)} 个数据集成功处理`;
+
+      if (response.file_info && response.file_info.uploaded_files_summary) {
+         response.file_info.uploaded_files_summary.forEach(fileSummary => {
+            uploadResults.value.push({
+                title: fileSummary.source === 'zip' ? 'ZIP文件处理成功' : 'CSV文件处理成功',
+                type: 'success',
+                description: `文件 ${fileSummary.file_name} 处理成功。数据ID: ${fileSummary.data_id || 'N/A'}`,
+                details: {
+                patient_count: fileSummary.source === 'zip' ? fileSummary.extracted_files : 1,
+                file_info: fileSummary
+                },
+                fileName: fileSummary.file_name
+            });
+        });
+      }
+      ElMessage.success(response.message || "上传成功！");
+    }
   } catch (error) {
     uploadProgress.value = 100;
     progressStatus.value = 'exception';
-    progressText.value = '上传失败';
-    
     const errorMessage = error.response?.data?.detail || error.message || '未知错误';
+    progressText.value = `上传失败: ${errorMessage}`;
     uploadResults.value.push({
       title: '上传失败',
       type: 'error',
       description: `文件上传失败: ${errorMessage}`,
-      fileName: fileNames 
+      fileName: fileList.value.map(f => f.name).join(', ')
     });
-    ElMessage.error(`数据上传失败: ${errorMessage}`);
+    // ElMessage for error is handled by global interceptor
   } finally {
     setTimeout(() => {
-      clearFiles();
-    }, 3000);
+      clearFiles(); // Clear files after a delay to allow user to see results
+    }, 5000); // Increased delay
     uploading.value = false;
   }
-}
+};
 
-const handleProgress = (event) => {
-  // Not used for manual upload
-}
+const handleProgress = (event, file, fileListInternal) => {
+  // This is called by el-upload's internal XHR.
+  // Since we use a custom submit, we'll manually set progress.
+  // If we were to use el-upload's :http-request for fine-grained progress, this would be relevant.
+  // For now, a simple "uploading..." state is managed by submitUpload.
+};
 
-const handleSuccess = (response) => {
-  // Not used for manual upload
-}
+const handleSuccess = (response, file, fileListInternal) => {
+  // Primarily for auto-upload or if :http-request resolves.
+  // Our submitUpload handles success logic.
+};
 
-const handleError = (error) => {
- // Not used for manual upload
-}
+const handleError = (error, file, fileListInternal) => {
+  // Primarily for auto-upload or if :http-request rejects.
+  // Our submitUpload handles error logic.
+};
 
 const handleFileChange = (file, newFileList) => {
   fileList.value = newFileList;
-  console.log('handleFileChange: fileList updated', fileList.value);
 };
 
 const clearFiles = () => {
-  fileList.value = []
-  uploadResults.value = [] 
-  uploadProgress.value = 0
-  uploading.value = false
-  groupName.value = ''
-}
+  fileList.value = [];
+  uploadResults.value = [];
+  uploadProgress.value = 0;
+  uploading.value = false;
+  groupName.value = '';
+  uploadNotes.value = ''; // Clear notes as well
+};
 </script>
 
 <style scoped>
 .data-upload {
   max-width: 800px;
-  margin: 0 auto;
+  margin: 20px auto; /* Added margin for better page layout */
+  padding: 20px;
+}
+
+.project-context-info {
+  margin-bottom: 20px;
+  text-align: center; /* Center the project ID tag */
 }
 
 .card-header {

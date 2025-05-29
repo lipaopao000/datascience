@@ -25,7 +25,21 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
-    path: '/data/upload',
+    path: '/projects/:projectId/data',
+    name: 'ProjectDataUpload', 
+    component: () => import('@/views/data/DataUpload.vue'), // Assuming DataUpload.vue is in @/views/data/
+    props: true, 
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:projectId/data-list',
+    name: 'ProjectDataList',
+    component: () => import('@/views/data/DataList.vue'), // Assuming DataList.vue is in @/views/data/
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/data/upload', // Keep the generic upload if it's still used, or remove if all uploads are project-specific
     name: 'DataUpload',
     component: () => import('@/views/data/DataUpload.vue'),
     meta: { requiresAuth: true }

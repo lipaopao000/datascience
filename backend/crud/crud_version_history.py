@@ -117,3 +117,16 @@ def get_specific_version(
 #         db.delete(db_version)
 #         db.commit()
 #     return db_version
+
+def get_versions_by_project_id(db: Session, project_id: int, skip: int = 0, limit: int = 100) -> List[models.VersionHistory]:
+    """
+    Get all versions for a specific project, ordered by creation date descending.
+    """
+    return (
+        db.query(models.VersionHistory)
+        .filter(models.VersionHistory.project_id == project_id)
+        .order_by(models.VersionHistory.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
