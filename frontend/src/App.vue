@@ -18,6 +18,11 @@
             <el-icon><House /></el-icon>
             <span>仪表板</span>
           </el-menu-item>
+
+          <el-menu-item index="/projects">
+            <el-icon><Folder /></el-icon>
+            <span>项目管理</span>
+          </el-menu-item>
           
           <el-sub-menu index="data">
             <template #title>
@@ -67,9 +72,13 @@
             </el-breadcrumb>
             
             <div class="header-actions">
-              <el-button type="primary" @click="refreshData">
+              <el-button type="primary" @click="refreshData" v-if="isAuthenticated">
                 <el-icon><Refresh /></el-icon>
                 刷新
+              </el-button>
+              <el-button type="danger" @click="handleLogout" v-if="isAuthenticated">
+                <el-icon><SwitchButton /></el-icon>
+                Logout
               </el-button>
             </div>
           </div>
@@ -85,16 +94,36 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { computed, ref, watchEffect } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { ElMessage } from 'element-plus';
+import { authAPI } from '@/api'; // Assuming your api/index.js is aliased as @/api
 
-const route = useRoute()
+const route = useRoute();
+const router = useRouter();
+
+// Authentication state
+const isAuthenticated = ref(!!localStorage.getItem('authToken'));
+
+watchEffect(() => {
+  // This effect will re-run whenever the route changes or localStorage might change.
+  // More robust solutions might use a global state manager (Pinia/Vuex)
+  // or custom events after login/logout.
+  isAuthenticated.value = !!localStorage.getItem('authToken');
+});
+
+const handleLogout = () => {
+  authAPI.logoutUser();
+  isAuthenticated.value = false; // Update local state
+  router.push('/login');
+  ElMessage.success('Logged out successfully!');
+};
 
 // 面包屑导航
 const breadcrumbs = computed(() => {
   const pathMap = {
     '/dashboard': '仪表板',
+    '/projects': '项目管理',
     '/data/upload': '数据导入',
     '/data/list': '数据列表',
     '/data/clean': '数据清洗',
@@ -113,7 +142,8 @@ const breadcrumbs = computed(() => {
   let currentPath = ''
   for (const segment of pathSegments) {
     currentPath += `/${segment}`
-    if (pathMap[currentPath] && currentPath !== '/dashboard') {
+    // Ensure not to create breadcrumb for login page itself
+    if (pathMap[currentPath] && currentPath !== '/dashboard' && route.path !== '/login') {
       breadcrumbItems.push({
         path: currentPath,
         name: pathMap[currentPath]

@@ -127,8 +127,11 @@ class ProjectUpdate(ProjectBase):
 class ProjectResponse(ProjectBase):
     id: int # Assuming integer ID from database
     owner_id: int
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True # For Pydantic v2, or orm_mode = True for v1
 
 # User Management
 class UserBase(BaseModel):
