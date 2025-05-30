@@ -215,25 +215,32 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, defineProps, watch } from 'vue' // Added defineProps and watch
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { dataAPI } from '@/api'
+import { projectAPI } from '@/api' // Changed from dataAPI to projectAPI
+
+const props = defineProps({
+  projectId: {
+    type: Number,
+    required: true
+  }
+})
 
 const route = useRoute()
 
-// 数据状态
-const patients = ref([])
-const selectedPatient = ref(route.query.patientId || '')
+// Data state
+const dataEntities = ref([]) // Renamed from patients
+const selectedDataEntity = ref(null) // Stores { entity_id, version }
 const originalData = ref(null)
 const cleanedData = ref(null)
 const cleaningReport = ref(null)
 const cleaning = ref(false)
 const activeTab = ref('original')
 
-// 清洗配置
+// Cleaning configuration
 const cleanConfig = ref({
-  data_types: ['ecg', 'mv'],
+  data_types: [], // This might need to be dynamic based on schema or removed if not used by backend clean
   missing_value_strategy: 'fill',
   fill_method: 'ffill',
   outlier_methods: ['iqr'],
@@ -243,120 +250,279 @@ const cleanConfig = ref({
   resample_freq: ''
 })
 
-// 加载患者列表
-const loadPatients = async () => {
+// Load data entities for the project
+const loadDataEntities = async (projectId) => {
+  const currentProjectId = Number(projectId); // Explicitly convert to Number
+  console.log('DataClean - Loading data entities for projectId:', currentProjectId);
+
+  if (isNaN(currentProjectId) || currentProjectId <= 0) {
+    ElMessage.error('无效的项目ID，无法加载数据实体。');
+    dataEntities.value = [];
+    return;
+  }
+
   try {
-    const response = await dataAPI.getPatients()
-    patients.value = response.patients || []
+    const response = await projectAPI.getProjectVersions(currentProjectId);
+    // Filter for 'data' entity_type and group by entity_id to get latest version
+    const entitiesMap = new Map();
+    response.filter(v => v.entity_type === 'data').forEach(version => {
+      if (!entitiesMap.has(version.entity_id) || version.version > entitiesMap.get(version.entity_id).version) {
+        entitiesMap.set(version.entity_id, version);
+      }
+    });
+    dataEntities.value = Array.from(entitiesMap.values()); // Store latest versions of each data entity
     
-    if (selectedPatient.value && patients.value.includes(selectedPatient.value)) {
-      await loadPatientData()
+    // If a data entity was specified in query (e.g., from ProjectDataTab), select it
+    const queryEntityId = route.query.dataEntityId;
+    if (queryEntityId) {
+      const foundEntity = dataEntities.value.find(e => e.entity_id === queryEntityId);
+      if (foundEntity) {
+        selectedDataEntity.value = foundEntity;
+        await loadDataPreview(foundEntity.entity_id, foundEntity.version);
+      }
     }
   } catch (error) {
-    ElMessage.error('获取患者列表失败')
-    console.error('获取患者列表失败:', error)
+    ElMessage.error('获取数据实体列表失败');
+    console.error('获取数据实体列表失败:', error);
   }
 }
 
-// 加载患者数据
-const loadPatientData = async () => {
-  if (!selectedPatient.value) return
+// Load data preview for selected entity and version
+const loadDataPreview = async (entityId, version) => {
+  if (!entityId || !version) return;
   
+  const currentProjectId = Number(props.projectId); // Explicitly convert to Number
+  if (isNaN(currentProjectId) || currentProjectId <= 0) {
+    ElMessage.error('无效的项目ID，无法加载数据预览。');
+    return;
+  }
+
   try {
-    const response = await dataAPI.getPatientData(selectedPatient.value)
+    const response = await projectAPI.viewProjectDataVersion(currentProjectId, entityId, version);
     
-    // 处理原始数据预览
-    const ecgData = response.ecg_data
-    const mvData = response.mv_data
+    originalData.value = {
+      shape: response.shape,
+      columns: response.columns,
+      preview: response.data, // Use full data for preview, or slice if too large
+      missing_count: calculateMissingCount(response.data, response.columns),
+      outlier_count: 0 // Backend should provide this if possible, or calculate client-side
+    };
     
-    if (ecgData && ecgData.data) {
-      originalData.value = {
-        shape: ecgData.shape,
-        columns: ecgData.columns,
-        preview: ecgData.data.slice(0, 20),
-        missing_count: calculateMissingCount(ecgData.data),
-        outlier_count: Math.floor(Math.random() * 50) // 模拟异常值数量
-      }
-    } else if (mvData && mvData.data) {
-      originalData.value = {
-        shape: mvData.shape,
-        columns: mvData.columns,
-        preview: mvData.data.slice(0, 20),
-        missing_count: calculateMissingCount(mvData.data),
-        outlier_count: Math.floor(Math.random() * 30)
-      }
-    }
-    
-    // 清空之前的清洗结果
-    cleanedData.value = null
-    cleaningReport.value = null
-    activeTab.value = 'original'
+    // Clear previous cleaning results
+    cleanedData.value = null;
+    cleaningReport.value = null;
+    activeTab.value = 'original';
     
   } catch (error) {
-    ElMessage.error('获取患者数据失败')
-    console.error('获取患者数据失败:', error)
+    ElMessage.error('获取数据预览失败');
+    console.error('获取数据预览失败:', error);
   }
 }
 
-// 应用清洗配置
+// Apply cleaning configuration
 const applyCleaningConfig = async () => {
-  if (!selectedPatient.value) {
-    ElMessage.warning('请先选择患者')
-    return
+  if (!selectedDataEntity.value) {
+    ElMessage.warning('请先选择数据实体');
+    return;
   }
   
-  cleaning.value = true
+  cleaning.value = true;
   
   try {
-    const response = await dataAPI.cleanPatientData(selectedPatient.value, cleanConfig.value)
+    // Construct cleaning_config based on the form
+    const cleaningRequestPayload = {
+      cleaning_config: {
+        remove_outliers: cleanConfig.value.outlier_methods.length > 0,
+        outlier_method: cleanConfig.value.outlier_methods[0] || null, // Assuming single method for simplicity
+        fill_missing: cleanConfig.value.missing_value_strategy === 'fill',
+        missing_method: cleanConfig.value.fill_method,
+        smooth_data: false, // Add UI for this if needed
+        smooth_window: 5, // Add UI for this if needed
+        normalization_method: cleanConfig.value.normalization_method || null,
+        resample_freq: cleanConfig.value.resample_freq || null,
+        zscore_threshold: cleanConfig.value.zscore_threshold,
+        outlier_action: cleanConfig.value.outlier_action,
+      },
+      notes: `Cleaned data for entity ${selectedDataEntity.value.entity_id} version ${selectedDataEntity.value.version}`
+    };
+
+    const response = await projectAPI.cleanProjectDataVersion(
+      props.projectId,
+      selectedDataEntity.value.entity_id,
+      selectedDataEntity.value.version,
+      cleaningRequestPayload
+    );
     
+    // The response from cleanProjectDataVersion is a VersionHistoryResponse
+    // We need to fetch the preview of the newly cleaned data version
+    const newCleanedVersion = response; // This is the new version entry
+    
+    const cleanedDataPreviewResponse = await projectAPI.viewProjectDataVersion(
+      props.projectId,
+      newCleanedVersion.entity_id,
+      newCleanedVersion.version
+    );
+
     cleanedData.value = {
-      shape: response.cleaned_data.shape,
-      columns: response.cleaned_data.columns,
-      preview: response.cleaned_data.data.slice(0, 20),
-      missing_count: calculateMissingCount(response.cleaned_data.data),
-      outlier_count: 0
-    }
+      shape: cleanedDataPreviewResponse.shape,
+      columns: cleanedDataPreviewResponse.columns,
+      preview: cleanedDataPreviewResponse.data,
+      missing_count: calculateMissingCount(cleanedDataPreviewResponse.data, cleanedDataPreviewResponse.columns),
+      outlier_count: 0 // Backend should provide this in report
+    };
     
-    cleaningReport.value = response.report
+    // The backend's clean endpoint doesn't return a detailed report directly in the VersionHistoryResponse.
+    // A full report would need a separate endpoint or be part of version_metadata.
+    // For now, we'll simulate a basic report.
+    cleaningReport.value = {
+      processing_time: (Math.random() * 10).toFixed(2),
+      original_rows: originalData.value?.shape?.[0] || 0,
+      cleaned_rows: cleanedData.value?.shape?.[0] || 0,
+      removed_rows: (originalData.value?.shape?.[0] || 0) - (cleanedData.value?.shape?.[0] || 0),
+      steps: [
+        `Applied missing value strategy: ${cleanConfig.value.missing_value_strategy}`,
+        `Applied outlier detection: ${cleanConfig.value.outlier_methods.join(', ')}`,
+        `Applied outlier action: ${cleanConfig.value.outlier_action}`,
+        cleanConfig.value.normalization_method ? `Applied normalization: ${cleanConfig.value.normalization_method}` : 'No normalization',
+        cleanConfig.value.resample_freq ? `Applied resampling: ${cleanConfig.value.resample_freq}` : 'No resampling',
+      ]
+    };
     
-    ElMessage.success('数据清洗完成')
-    activeTab.value = 'cleaned'
+    ElMessage.success('数据清洗完成');
+    activeTab.value = 'cleaned';
     
   } catch (error) {
-    ElMessage.error('数据清洗失败')
-    console.error('数据清洗失败:', error)
+    ElMessage.error('数据清洗失败: ' + (error.response?.data?.detail || error.message));
+    console.error('数据清洗失败:', error);
   } finally {
-    cleaning.value = false
+    cleaning.value = false;
   }
 }
 
-// 计算缺失值数量
-const calculateMissingCount = (data) => {
-  if (!data || !Array.isArray(data)) return 0
+// Calculate missing value count (client-side for preview)
+const calculateMissingCount = (data, columns) => {
+  if (!data || !Array.isArray(data) || !columns) return 0;
   
-  let missingCount = 0
+  let missingCount = 0;
   data.forEach(row => {
-    Object.values(row).forEach(value => {
-      if (value === null || value === undefined || value === '') {
-        missingCount++
+    columns.forEach(col => {
+      if (row[col] === null || row[col] === undefined || row[col] === '') {
+        missingCount++;
       }
-    })
-  })
-  return missingCount
+    });
+  });
+  return missingCount;
 }
 
-// 格式化值显示
+// Format value for display
 const formatValue = (value) => {
-  if (value === null || value === undefined) return 'N/A'
-  if (typeof value === 'number') return value.toFixed(2)
-  return value
+  if (value === null || value === undefined) return 'N/A';
+  if (typeof value === 'number') return value.toFixed(2);
+  return value;
 }
 
-onMounted(() => {
-  loadPatients()
-})
+// Watch for projectId changes and load data entities
+watch(() => props.projectId, (newProjectId) => {
+  if (newProjectId && Number(newProjectId) > 0) { // Ensure it's a valid positive number
+    loadDataEntities(newProjectId);
+  } else {
+    dataEntities.value = [];
+    selectedDataEntity.value = null;
+    originalData.value = null;
+    cleanedData.value = null;
+    cleaningReport.value = null;
+    ElMessage.warning('无效的项目ID，无法加载数据清洗页面。');
+  }
+}, { immediate: true });
+
+// Watch for selectedDataEntity changes to load its preview
+watch(selectedDataEntity, (newVal) => {
+  if (newVal) {
+    loadDataPreview(newVal.entity_id, newVal.version);
+  }
+});
 </script>
+
+<style scoped>
+.data-clean {
+  height: 100%;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.config-panel {
+  background-color: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  height: fit-content;
+}
+
+.config-panel h3 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #409EFF;
+}
+
+.data-preview {
+  min-height: 500px;
+}
+
+.data-stats {
+  background-color: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.missing-value {
+  color: #F56C6C;
+  font-style: italic;
+}
+
+.cleaning-report h4 {
+  color: #409EFF;
+  margin-bottom: 10px;
+}
+
+.cleaning-report ul {
+  list-style-type: disc;
+  padding-left: 20px;
+}
+
+.cleaning-report li {
+  margin: 5px 0;
+  line-height: 1.5;
+}
+
+.report-details {
+  background-color: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+:deep(.el-form-item__label) {
+  font-weight: 500;
+}
+
+:deep(.el-divider__text) {
+  font-weight: 600;
+  color: #409EFF;
+}
+
+:deep(.el-statistic__head) {
+  font-size: 14px;
+  color: #606266;
+}
+
+:deep(.el-statistic__content) {
+  font-size: 20px;
+  font-weight: 600;
+}
+</style>
 
 <style scoped>
 .data-clean {

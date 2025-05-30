@@ -24,37 +24,37 @@
             <span>项目管理</span>
           </el-menu-item>
           
-          <el-sub-menu index="data">
+          <el-sub-menu index="data-management">
             <template #title>
               <el-icon><Document /></el-icon>
               <span>数据管理</span>
             </template>
-            <el-menu-item index="/data/upload">数据导入</el-menu-item>
-            <el-menu-item index="/data/list">数据列表</el-menu-item>
-            <el-menu-item index="/data/schemas">数据模式管理</el-menu-item>
-            <el-menu-item index="/data/clean">数据清洗</el-menu-item>
+            <el-menu-item :index="getProjectScopedPath('ProjectDataUpload')" @click="navigateToProjectScopedPage('ProjectDataUpload')">数据导入</el-menu-item>
+            <el-menu-item :index="getProjectScopedPath('ProjectDataList')" @click="navigateToProjectScopedPage('ProjectDataList')">数据列表</el-menu-item>
+            <el-menu-item :index="getProjectScopedPath('ProjectSchemas')" @click="navigateToProjectScopedPage('ProjectSchemas')">数据模式管理</el-menu-item>
+            <el-menu-item :index="getProjectScopedPath('ProjectDataClean')" @click="navigateToProjectScopedPage('ProjectDataClean')">数据清洗</el-menu-item>
           </el-sub-menu>
           
-          <el-sub-menu index="analysis">
+          <el-sub-menu index="data-analysis">
             <template #title>
               <el-icon><TrendCharts /></el-icon>
               <span>数据分析</span>
             </template>
-            <el-menu-item index="/analysis/explorer">数据探索实验室</el-menu-item>
-            <el-menu-item index="/analysis/visualization">数据可视化</el-menu-item>
-            <el-menu-item index="/analysis/features">特征工程</el-menu-item>
-            <el-menu-item index="/analysis/statistics">统计分析</el-menu-item>
+            <el-menu-item :index="getProjectScopedPath('ProjectDataExplorer')" @click="navigateToProjectScopedPage('ProjectDataExplorer')">数据探索实验室</el-menu-item>
+            <el-menu-item :index="getProjectScopedPath('ProjectDataVisualization')" @click="navigateToProjectScopedPage('ProjectDataVisualization')">数据可视化</el-menu-item>
+            <el-menu-item :index="getProjectScopedPath('ProjectFeatureEngineering')" @click="navigateToProjectScopedPage('ProjectFeatureEngineering')">特征工程</el-menu-item>
+            <el-menu-item :index="getProjectScopedPath('ProjectStatisticsAnalysis')" @click="navigateToProjectScopedPage('ProjectStatisticsAnalysis')">统计分析</el-menu-item>
           </el-sub-menu>
           
-          <el-sub-menu index="ml">
+          <el-sub-menu index="machine-learning">
             <template #title>
               <el-icon><DataAnalysis /></el-icon>
               <span>机器学习</span>
             </template>
-            <el-menu-item index="/ml/models">模型管理</el-menu-item>
-            <el-menu-item index="/ml/train">模型训练</el-menu-item>
-            <el-menu-item index="/ml/predict">模型预测</el-menu-item>
-            <el-menu-item index="/ml/evaluation">模型评估</el-menu-item>
+            <el-menu-item :index="getProjectScopedPath('ProjectModelManagement')" @click="navigateToProjectScopedPage('ProjectModelManagement')">模型管理</el-menu-item>
+            <el-menu-item :index="getProjectScopedPath('ProjectModelTraining')" @click="navigateToProjectScopedPage('ProjectModelTraining')">模型训练</el-menu-item>
+            <el-menu-item :index="getProjectScopedPath('ProjectModelPrediction')" @click="navigateToProjectScopedPage('ProjectModelPrediction')">模型预测</el-menu-item>
+            <el-menu-item :index="getProjectScopedPath('ProjectModelEvaluation')" @click="navigateToProjectScopedPage('ProjectModelEvaluation')">模型评估</el-menu-item>
           </el-sub-menu>
         </el-menu>
       </el-aside>
@@ -119,39 +119,113 @@ const handleLogout = () => {
   ElMessage.success('Logged out successfully!');
 };
 
+const getProjectScopedPath = (routeName) => {
+  const activeProjectId = parseInt(localStorage.getItem('activeProjectId')); // Parse to integer
+  console.log('getProjectScopedPath - activeProjectId:', activeProjectId, 'routeName:', routeName);
+
+  if (activeProjectId && !isNaN(activeProjectId) && activeProjectId > 0) {
+    // Use router.resolve to get the full path for active highlighting
+    const resolvedRoute = router.resolve({ name: routeName, params: { projectId: activeProjectId } });
+    return resolvedRoute.path;
+  }
+  // Return a generic path or empty string if no active project,
+  // so the menu item doesn't try to navigate to an invalid path for active state.
+  // The @click handler will prevent actual navigation if no project is selected.
+  switch (routeName) {
+    case 'ProjectDataUpload': return `/projects/:projectId/data/upload`;
+    case 'ProjectDataList': return `/projects/:projectId/data-list`;
+    case 'ProjectSchemas': return `/projects/:projectId/schemas`;
+    case 'ProjectDataClean': return `/projects/:projectId/data/clean`;
+    case 'ProjectDataExplorer': return `/projects/:projectId/analysis/explorer`;
+    case 'ProjectDataVisualization': return `/projects/:projectId/analysis/visualization`;
+    case 'ProjectFeatureEngineering': return `/projects/:projectId/analysis/features`;
+    case 'ProjectStatisticsAnalysis': return `/projects/:projectId/analysis/statistics`;
+    case 'ProjectModelManagement': return `/projects/:projectId/models`;
+    case 'ProjectModelTraining': return `/projects/:projectId/ml/train`;
+    case 'ProjectModelPrediction': return `/projects/:projectId/ml/predict`;
+    case 'ProjectModelEvaluation': return `/projects/:projectId/ml/evaluation`;
+    default: return '';
+  }
+};
+
+const navigateToProjectScopedPage = (routeName) => {
+  const activeProjectId = parseInt(localStorage.getItem('activeProjectId')); // Ensure it's parsed as an integer
+  console.log('navigateToProjectScopedPage - activeProjectId:', activeProjectId, 'routeName:', routeName);
+
+  if (activeProjectId && !isNaN(activeProjectId) && activeProjectId > 0) { // Check for valid number
+    router.push({ name: routeName, params: { projectId: activeProjectId } });
+  } else {
+    ElMessage.warning('Please select a project first from "项目管理" (Project Management).');
+    router.push({ name: 'ProjectList' }); // Redirect to project list
+  }
+};
+
 // 面包屑导航
 const breadcrumbs = computed(() => {
   const pathMap = {
     '/dashboard': '仪表板',
     '/projects': '项目管理',
-    '/data/upload': '数据导入',
-    '/data/list': '数据列表',
-    '/data/clean': '数据清洗',
-    '/analysis/visualization': '数据可视化',
-    '/analysis/features': '特征工程',
-    '/analysis/statistics': '统计分析',
-    '/ml/models': '模型管理',
-    '/ml/train': '模型训练',
-    '/ml/predict': '模型预测',
-    '/ml/evaluation': '模型评估'
+    'ProjectDetail': '项目详情',
+    'ProjectDataUpload': '数据导入',
+    'ProjectDataList': '数据列表',
+    'ProjectSchemas': '数据模式管理',
+    'ProjectDataClean': '数据清洗',
+    'ProjectDataExplorer': '数据探索实验室',
+    'ProjectDataVisualization': '数据可视化',
+    'ProjectFeatureEngineering': '特征工程',
+    'ProjectStatisticsAnalysis': '统计分析',
+    'ProjectModelManagement': '模型管理',
+    'ProjectModelTraining': '模型训练',
+    'ProjectModelPrediction': '模型预测',
+    'ProjectModelEvaluation': '模型评估',
+    'ExperimentRuns': '实验运行详情',
+    'ModelVersions': '模型版本详情',
   }
   
-  const pathSegments = route.path.split('/').filter(Boolean)
   const breadcrumbItems = []
-  
-  let currentPath = ''
-  for (const segment of pathSegments) {
-    currentPath += `/${segment}`
-    // Ensure not to create breadcrumb for login page itself
-    if (pathMap[currentPath] && currentPath !== '/dashboard' && route.path !== '/login') {
-      breadcrumbItems.push({
-        path: currentPath,
-        name: pathMap[currentPath]
-      })
+  // Always add Dashboard as the first item
+  breadcrumbItems.push({ path: '/dashboard', name: '首页' });
+
+  // Process current route path
+  const matchedRoutes = router.currentRoute.value.matched;
+  matchedRoutes.forEach(match => {
+    // Skip dashboard if it's already added or if it's the root redirect
+    if (match.path === '/' || match.path === '/dashboard') return;
+
+    // Only process if the route has a name and it's in our pathMap
+    if (match.name && pathMap[match.name]) {
+      let breadcrumbName = pathMap[match.name];
+      let breadcrumbPath = match.path;
+
+      // Handle dynamic parameters for project-scoped routes
+      // Safely check for existence of params before accessing
+      const params = match.params || {}; // Ensure params is an object
+      
+      if (params.projectId) {
+        breadcrumbName = `${pathMap[match.name]} (项目: ${params.projectId})`;
+        const resolvedRoute = router.resolve({ name: match.name, params: { projectId: params.projectId } });
+        breadcrumbPath = resolvedRoute.path;
+      } else if (params.experimentId && match.name === 'ExperimentRuns') {
+         breadcrumbName = `${pathMap[match.name]} (实验: ${params.experimentId})`;
+         const resolvedRoute = router.resolve({ name: match.name, params: { experimentId: params.experimentId } });
+         breadcrumbPath = resolvedRoute.path;
+      } else if (params.modelId && match.name === 'ModelVersions') {
+         breadcrumbName = `${pathMap[match.name]} (模型: ${params.modelId})`;
+         const resolvedRoute = router.resolve({ name: match.name, params: { modelId: params.modelId } });
+         breadcrumbPath = resolvedRoute.path;
+      }
+      
+      // Add to breadcrumbs if not a duplicate path
+      if (!breadcrumbItems.some(item => item.path === breadcrumbPath)) {
+        breadcrumbItems.push({
+          path: breadcrumbPath,
+          name: breadcrumbName
+        });
+      }
     }
-  }
+  });
   
-  return breadcrumbItems
+  return breadcrumbItems;
 })
 
 const refreshData = () => {

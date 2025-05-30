@@ -45,7 +45,16 @@ async def login_for_access_token(
     access_token = security.create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    response_data = {"access_token": access_token, "token_type": "bearer"}
+    
+    # Manually add CORS header for debugging
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content=response_data)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Credentials"] = "true" # Needed if allow_origins is not "*"
+    response.headers["Access-Control-Allow-Methods"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
 
 @router.get("/me", response_model=schemas.UserResponse)
 async def read_users_me(

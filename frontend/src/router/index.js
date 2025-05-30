@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Login from '@/views/auth/Login.vue'; 
+import Register from '@/views/auth/Register.vue'; // Import Register
 import ProjectList from '@/views/project/ProjectList.vue'; // Import ProjectList
 
 const routes = [
@@ -7,6 +8,11 @@ const routes = [
     path: '/login',
     name: 'Login',
     component: Login 
+  },
+  {
+    path: '/register', // New registration route
+    name: 'Register',
+    component: Register
   },
   {
     path: '/',
@@ -19,27 +25,121 @@ const routes = [
     meta: { requiresAuth: true } 
   },
   {
-    path: '/projects', // Add projects route
-    name: 'Projects',
+    path: '/projects',
+    name: 'ProjectList',
     component: ProjectList,
     meta: { requiresAuth: true }
   },
   {
-    path: '/projects/:projectId/data',
-    name: 'ProjectDataUpload', 
-    component: () => import('@/views/data/DataUpload.vue'), // Assuming DataUpload.vue is in @/views/data/
-    props: true, 
+    path: '/projects/:projectId',
+    name: 'ProjectDetail',
+    component: () => import('@/views/project/ProjectDetail.vue'),
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:projectId/data/upload',
+    name: 'ProjectDataUpload',
+    component: () => import('@/views/data/DataUpload.vue'),
+    props: true,
     meta: { requiresAuth: true }
   },
   {
     path: '/projects/:projectId/data-list',
     name: 'ProjectDataList',
-    component: () => import('@/views/data/DataList.vue'), // Assuming DataList.vue is in @/views/data/
+    component: () => import('@/views/data/DataList.vue'), // Re-using DataList.vue, it needs projectId
     props: true,
     meta: { requiresAuth: true }
   },
   {
-    path: '/data/upload', // Keep the generic upload if it's still used, or remove if all uploads are project-specific
+    path: '/projects/:projectId/schemas',
+    name: 'ProjectSchemas',
+    component: () => import('@/views/data/DataSchemaManagement.vue'), // Re-using DataSchemaManagement.vue
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:projectId/data/clean',
+    name: 'ProjectDataClean',
+    component: () => import('@/views/data/DataClean.vue'), // Re-using DataClean.vue
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:projectId/analysis/explorer',
+    name: 'ProjectDataExplorer',
+    component: () => import('@/views/analysis/DataExplorer.vue'),
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:projectId/analysis/visualization',
+    name: 'ProjectDataVisualization',
+    component: () => import('@/views/analysis/DataVisualization.vue'),
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:projectId/analysis/features',
+    name: 'ProjectFeatureEngineering',
+    component: () => import('@/views/analysis/FeatureEngineering.vue'),
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:projectId/analysis/statistics',
+    name: 'ProjectStatisticsAnalysis',
+    component: () => import('@/views/analysis/StatisticsAnalysis.vue'),
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:projectId/models',
+    name: 'ProjectModelManagement',
+    component: () => import('@/views/ml/ModelManagement.vue'), // Re-using ModelManagement.vue
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:projectId/ml/train',
+    name: 'ProjectModelTraining',
+    component: () => import('@/views/ml/ModelTraining.vue'),
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:projectId/ml/predict',
+    name: 'ProjectModelPrediction',
+    component: () => import('@/views/ml/ModelPrediction.vue'),
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/projects/:projectId/ml/evaluation',
+    name: 'ProjectModelEvaluation',
+    component: () => import('@/views/ml/ModelEvaluation.vue'),
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/experiments/:experimentId/runs',
+    name: 'ExperimentRuns',
+    component: () => import('@/views/analysis/ExperimentRuns.vue'),
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/registered-models/:modelId/versions',
+    name: 'ModelVersions',
+    component: () => import('@/views/ml/ModelVersions.vue'),
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  // Keep generic routes if they are still intended to be accessible without project context,
+  // but ensure their components can handle missing projectId or redirect.
+  // For now, I will keep them but they might need further adjustment if they cause issues.
+  {
+    path: '/data/upload',
     name: 'DataUpload',
     component: () => import('@/views/data/DataUpload.vue'),
     meta: { requiresAuth: true }

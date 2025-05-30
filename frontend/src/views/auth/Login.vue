@@ -15,6 +15,7 @@
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleLogin" :loading="loading" class="login-button">Login</el-button>
+          <el-button @click="goToRegister" class="register-button">Register</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -39,6 +40,10 @@ const router = useRouter();
 const rules = {
   username: [{ required: true, message: 'Please input username', trigger: 'blur' }],
   password: [{ required: true, message: 'Please input password', trigger: 'blur' }],
+};
+
+const goToRegister = () => {
+  router.push('/register');
 };
 
 const handleLogin = async () => {
@@ -83,6 +88,11 @@ const handleLogin = async () => {
 }
 
 .login-button {
+  width: 100%;
+  margin-bottom: 10px; /* Add some space between buttons */
+}
+
+.register-button {
   width: 100%;
 }
 </style>

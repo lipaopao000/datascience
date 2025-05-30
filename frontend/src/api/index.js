@@ -3,7 +3,7 @@ import { ElMessage } from 'element-plus'
 
 // 创建axios实例
 const api = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: 'http://localhost:8001',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json'
@@ -27,9 +27,11 @@ api.interceptors.request.use(
 // 响应拦截器
 api.interceptors.response.use(
   response => {
+    console.log('API Response (Success):', response); // Log successful responses
     return response.data
   },
   error => {
+    console.error('API Response (Error):', error); // Log error responses
     const message = error.response?.data?.detail || error.message || '请求失败'
     ElMessage.error(message)
     return Promise.reject(error)
@@ -52,9 +54,15 @@ export const authAPI = {
     });
     if (response && response.access_token) {
       localStorage.setItem('authToken', response.access_token);
+    } else {
+      // This error should ideally be caught by the response interceptor,
+      // but this explicit check ensures token presence.
+      console.error('Login response did not contain access_token:', response);
+      throw new Error('Login failed: No access token received.');
     }
     return response;
   },
+  registerUser: (userData) => api.post('/api/v1/users/', userData), // New registration endpoint
   getCurrentUser: () => api.get('/api/v1/users/me'),
   logoutUser: () => {
     localStorage.removeItem('authToken');
@@ -63,107 +71,86 @@ export const authAPI = {
 };
 
 
-// API接口定义
+// API接口定义 (Generic/Legacy APIs - most functionality moved to projectAPI, experimentAPI, modelRegistryAPI)
+// These might be removed or re-implemented with /api/v1 prefixes if still needed for non-project-scoped operations.
 export const dataAPI = {
-  // 上传数据
-  uploadData: (files, groupName) => {
-    const formData = new FormData()
-    files.forEach(file => {
-      formData.append('files', file) // Append each file with the key 'files'
-    })
-    
-    let url = '/api/upload' // This path seems to be /api/upload, not /api/v1 yet. Assuming it's correct as per original.
-    const params = new URLSearchParams();
-    if (groupName) {
-      params.append('group_name', groupName);
-    }
-    
-    const queryString = params.toString();
-    if (queryString) {
-      url += `?${queryString}`;
-    }
-    
-    return api.post(url, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-  },
+  // Generic data upload - consider if this is still needed or if all uploads are project-scoped
+  // uploadData: (files, groupName) => { /* ... */ },
   
-  // 获取数据列表 (原 getPatients)
-  getDataList: () => api.get('/api/data'), // Assuming this path is correct as per original.
+  // Generic data list - replaced by projectAPI.getProjectVersions
+  // getDataList: () => api.get('/api/v1/data'), // Example if a generic /v1/data endpoint existed
   
-  // 获取数据详情 (原 getPatientData)
-  getDataDetails: (dataId) => api.get(`/api/data/${dataId}`), // Assuming this path is correct as per original.
+  // Generic data details - replaced by projectAPI.viewProjectDataVersion
+  // getDataDetails: (dataId) => api.get(`/api/v1/data/${dataId}`),
   
-  // 清洗数据 (原 cleanPatientData)
-  cleanData: (dataId, config) => api.post(`/api/clean/${dataId}`, config), // Assuming this path is correct as per original.
+  // Generic clean data - replaced by projectAPI.cleanProjectDataVersion
+  // cleanData: (dataId, config) => api.post(`/api/v1/clean/${dataId}`, config),
   
-  // 获取可视化数据 (原 getVisualizationData)
-  getVisualizationData: (dataId) => api.get(`/api/visualize/${dataId}`), // Assuming this path is correct as per original.
+  // Generic visualization data - needs backend /api/v1 endpoint if still used
+  // getVisualizationData: (dataId) => api.get(`/api/v1/visualize/${dataId}`),
 
-  // 确认数据
-  confirmData: (data) => api.post('/api/data/confirm', data), // Assuming this path is correct as per original.
+  // Generic confirm data - needs backend /api/v1 endpoint if still used
+  // confirmData: (data) => api.post('/api/v1/data/confirm', data),
 
-  // 格式化数据
-  formatData: (data) => api.post('/api/data/process-format', data), // Assuming this path is correct as per original.
+  // Generic format data - needs backend /api/v1 endpoint if still used
+  // formatData: (data) => api.post('/api/v1/data/process-format', data),
 
-  // 批量删除数据
-  deleteDataBatch: (data) => api.post('/api/data/delete-batch', data) // Assuming this path is correct as per original.
+  // Generic batch delete data - needs backend /api/v1 endpoint if still used
+  // deleteDataBatch: (data) => api.post('/api/v1/data/delete-batch', data)
 }
 
 export const featureAPI = {
-  // 提取特征
-  extractFeatures: (data) => api.post('/api/features/extract', data), // Assuming this path is correct as per original.
+  // Generic feature extraction - replaced by projectAPI.extractProjectFeatures
+  // extractFeatures: (data) => api.post('/api/v1/features/extract', data),
   
-  // 获取所有特征 (原 getFeatures)
-  getAllFeatures: () => api.get('/api/features'), // Assuming this path is correct as per original.
+  // Generic get all features - needs backend /api/v1 endpoint if still used
+  // getAllFeatures: () => api.get('/api/v1/features'),
 
-  // 获取特定数据ID的特征
-  getFeaturesForDataId: (dataId) => api.get(`/api/features/${dataId}`) // Assuming this path is correct as per original.
+  // Generic get features for data ID - needs backend /api/v1 endpoint if still used
+  // getFeaturesForDataId: (dataId) => api.get(`/api/v1/features/${dataId}`)
 }
 
 export const mlAPI = {
-  // 训练模型
-  trainModel: (data) => api.post('/api/ml/train', data), // Assuming this path is correct as per original.
+  // Generic train model - replaced by projectAPI.trainProjectModel
+  // trainModel: (data) => api.post('/api/v1/ml/train', data),
   
-  // 预测
-  predict: (data) => api.post('/api/ml/predict', data), // Assuming this path is correct as per original.
+  // Generic predict - replaced by projectAPI.predictWithProjectModel
+  // predict: (data) => api.post('/api/v1/ml/predict', data),
   
-  // 获取模型列表
-  getModels: () => api.get('/api/ml/models'), // Assuming this path is correct as per original.
+  // Generic get models list - replaced by modelRegistryAPI.getRegisteredModels
+  // getModels: () => api.get('/api/v1/ml/models'),
 
-  // 获取模型训练历史
-  getTrainingHistory: (modelId) => api.get(`/api/ml/models/${modelId}/history`) // Assuming this path is correct as per original.
+  // Generic get training history - replaced by experimentAPI.getRunsByExperiment or modelRegistryAPI.getModelVersionsByRegisteredModel
+  // getTrainingHistory: (modelId) => api.get(`/api/v1/ml/models/${modelId}/history`)
 }
 
 export const schemaAPI = {
-  // 创建数据模式
-  createSchema: (data) => api.post('/api/v1/schemas', data),
+  // 创建数据模式 (project-scoped)
+  createSchema: (projectId, schemaData) => api.post(`/api/v1/projects/${projectId}/schemas`, schemaData),
   
-  // 获取所有数据模式
-  getSchemas: () => api.get('/api/v1/schemas'),
+  // 获取所有数据模式 (project-scoped)
+  getSchemas: (projectId, skip = 0, limit = 100) => api.get(`/api/v1/projects/${projectId}/schemas?skip=${skip}&limit=${limit}`),
   
-  // 获取特定数据模式
-  getSchema: (schemaId) => api.get(`/api/v1/schemas/${schemaId}`),
+  // 获取特定数据模式 (project-scoped)
+  getSchema: (projectId, schemaId) => api.get(`/api/v1/projects/${projectId}/schemas/${schemaId}`),
   
-  // 更新数据模式
-  updateSchema: (schemaId, data) => api.put(`/api/v1/schemas/${schemaId}`, data),
+  // 更新数据模式 (project-scoped)
+  updateSchema: (projectId, schemaId, schemaData) => api.put(`/api/v1/projects/${projectId}/schemas/${schemaId}`, schemaData),
   
-  // 删除数据模式
-  deleteSchema: (schemaId) => api.delete(`/api/v1/schemas/${schemaId}`)
+  // 删除数据模式 (project-scoped)
+  deleteSchema: (projectId, schemaId) => api.delete(`/api/v1/projects/${projectId}/schemas/${schemaId}`)
 }
 
 export const projectAPI = {
   createProject: (projectData) => api.post('/api/v1/projects/', projectData),
   getProjects: () => api.get('/api/v1/projects/'),
-  getProjectDetails: (projectId) => api.get(`/api/v1/projects/${projectId}`),
+  getProject: (projectId) => api.get(`/api/v1/projects/${projectId}`), // Renamed for consistency
   updateProject: (projectId, projectUpdateData) => api.put(`/api/v1/projects/${projectId}`, projectUpdateData),
   deleteProject: (projectId) => api.delete(`/api/v1/projects/${projectId}`),
 
   // Project-specific data and model operations
   uploadProjectData: (projectId, formData) => api.post(`/api/v1/projects/${projectId}/data/upload`, formData, {
-    // Axios will set Content-Type to multipart/form-data automatically for FormData
+    headers: { 'Content-Type': 'multipart/form-data' } // Explicitly set for FormData
   }),
   viewProjectDataVersion: (projectId, dataEntityId, versionNumber, page = 1, pageSize = 10) => 
     api.get(`/api/v1/projects/${projectId}/data/${dataEntityId}/versions/${versionNumber}/view?page=${page}&page_size=${pageSize}`),
@@ -181,6 +168,62 @@ export const projectAPI = {
     api.post(`/api/v1/projects/${projectId}/data/${dataEntityId}/versions/${sourceVersionNumber}/rollback`, rollbackRequest),
   getProjectVersions: (projectId, skip = 0, limit = 100) => 
     api.get(`/api/v1/projects/${projectId}/versions?skip=${skip}&limit=${limit}`),
+};
+
+export const experimentAPI = {
+  createExperiment: (experimentData) => api.post('/api/v1/experiments/', experimentData),
+  getExperiments: (skip = 0, limit = 100, projectId = null) => {
+    let url = `/api/v1/experiments/?skip=${skip}&limit=${limit}`;
+    if (projectId !== null) {
+      url += `&project_id=${projectId}`;
+    }
+    return api.get(url);
+  },
+  getExperiment: (experimentId) => api.get(`/api/v1/experiments/${experimentId}`),
+  startRun: (experimentId, runData) => api.post(`/api/v1/experiments/${experimentId}/runs/`, runData),
+  endRun: (runId, status) => api.put(`/api/v1/runs/${runId}/end?status=${status}`),
+  getRun: (runId) => api.get(`/api/v1/runs/${runId}`),
+  getRunsByExperiment: (experimentId, skip = 0, limit = 100) => 
+    api.get(`/api/v1/experiments/${experimentId}/runs?skip=${skip}&limit=${limit}`),
+  logParameter: (runId, key, value) => api.post(`/api/v1/runs/${runId}/parameters`, { key, value }),
+  getRunParameters: (runId) => api.get(`/api/v1/runs/${runId}/parameters`),
+  logMetric: (runId, key, value, step = null) => api.post(`/api/v1/runs/${runId}/metrics`, { key, value, step }),
+  getRunMetrics: (runId) => api.get(`/api/v1/runs/${runId}/metrics`),
+  logArtifact: (runId, file, artifactPath = "", fileType = "other") => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('artifact_path', artifactPath);
+    formData.append('file_type', fileType);
+    return api.post(`/api/v1/runs/${runId}/artifacts`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+  getRunArtifacts: (runId) => api.get(`/api/v1/runs/${runId}/artifacts`),
+  downloadArtifact: (runId, artifactPath) => api.get(`/api/v1/runs/${runId}/artifacts/download?artifact_path=${encodeURIComponent(artifactPath)}`, {
+    responseType: 'blob' // Important for file downloads
+  }),
+};
+
+export const modelRegistryAPI = {
+  createRegisteredModel: (modelData) => api.post('/api/v1/registered-models/', modelData),
+  getRegisteredModels: (skip = 0, limit = 100, projectId = null) => {
+    let url = `/api/v1/registered-models/?skip=${skip}&limit=${limit}`;
+    if (projectId !== null) {
+      url += `&project_id=${projectId}`;
+    }
+    return api.get(url);
+  },
+  getRegisteredModel: (modelId) => api.get(`/api/v1/registered-models/${modelId}`),
+  updateRegisteredModel: (modelId, modelUpdateData) => api.put(`/api/v1/registered-models/${modelId}`, modelUpdateData),
+  deleteRegisteredModel: (modelId) => api.delete(`/api/v1/registered-models/${modelId}`),
+  createModelVersion: (registeredModelId, versionData) => api.post(`/api/v1/registered-models/${registeredModelId}/versions/`, versionData),
+  getModelVersionsByRegisteredModel: (registeredModelId, skip = 0, limit = 100) => 
+    api.get(`/api/v1/registered-models/${registeredModelId}/versions/?skip=${skip}&limit=${limit}`),
+  getModelVersion: (versionId) => api.get(`/api/v1/model-versions/${versionId}`),
+  getLatestModelVersionByName: (modelName) => api.get(`/api/v1/registered-models/${modelName}/versions/latest`),
+  getSpecificModelVersionByName: (modelName, versionNumber) => api.get(`/api/v1/registered-models/${modelName}/versions/${versionNumber}`),
+  transitionModelVersionStage: (versionId, newStage) => api.put(`/api/v1/model-versions/${versionId}/stage?new_stage=${newStage}`),
+  deleteModelVersion: (versionId) => api.delete(`/api/v1/model-versions/${versionId}`),
 };
 
 export default api

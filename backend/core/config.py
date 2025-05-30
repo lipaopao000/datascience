@@ -11,13 +11,19 @@ class Settings(BaseSettings):
     # 60 minutes * 24 hours * 8 days = 8 days
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
 
+    # Default superuser credentials (for development only, override in .env for production)
+    FIRST_SUPERUSER_USERNAME: str = "admin"
+    FIRST_SUPERUSER_PASSWORD: str = "adminpass" # Change this in production!
+    FIRST_SUPERUSER_EMAIL: str = "admin@example.com"
+
     # Database
     SQLALCHEMY_DATABASE_URL: str = "sqlite:///./datascience_project_management.db"
     # Use in-memory SQLite for tests for speed and to avoid file permission issues
     TEST_SQLALCHEMY_DATABASE_URL: str = "sqlite:///:memory:" 
 
     # CORS
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
+    # Explicitly allow frontend origin for development
+    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = ["http://localhost:3000"] # Add frontend URL
 
     @validator("BACKEND_CORS_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[AnyHttpUrl], str]:

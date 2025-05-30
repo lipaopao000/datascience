@@ -1,19 +1,19 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import AutoImport from 'unplugin-auto-import/vite'
-import Components from 'unplugin-vue-components/vite'
-import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
+// import AutoImport from 'unplugin-auto-import/vite' // Removed
+// import Components from 'unplugin-vue-components/vite' // Removed
+// import { ElementPlusResolver } from 'unplugin-vue-components/resolvers' // Removed
 import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [
     vue(),
-    AutoImport({
-      resolvers: [ElementPlusResolver()],
-    }),
-    Components({
-      resolvers: [ElementPlusResolver()],
-    }),
+    // AutoImport({ // Removed
+    //   resolvers: [ElementPlusResolver()],
+    // }),
+    // Components({ // Removed
+    //   resolvers: [ElementPlusResolver()],
+    // }),
   ],
   server: {
     host: '0.0.0.0',

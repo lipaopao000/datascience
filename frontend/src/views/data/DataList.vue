@@ -90,8 +90,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
-import { useRoute, useRouter } // Import useRouter
-from 'vue-router';
+import { useRoute, useRouter } from 'vue-router'; // Import useRouter
 import { ElMessage, ElMessageBox, ElEmpty } from 'element-plus';
 import { projectAPI } from '@/api'; // Ensure projectAPI is imported
 
@@ -120,8 +119,19 @@ const pageTitle = computed(() => `Data Versions for Project ID: ${props.projectI
 const fetchProjectVersions = async () => {
   loading.value = true;
   error.value = null;
+  const currentProjectId = Number(props.projectId); // Explicitly convert to Number
+  console.log('DataList - Fetching project versions for projectId:', currentProjectId);
+
+  if (isNaN(currentProjectId) || currentProjectId <= 0) {
+    error.value = "无效的项目ID，无法加载数据版本。";
+    versions.value = [];
+    totalVersions.value = 0;
+    loading.value = false;
+    return;
+  }
+
   try {
-    const response = await projectAPI.getProjectVersions(props.projectId, (currentPage.value - 1) * pageSize.value, pageSize.value);
+    const response = await projectAPI.getProjectVersions(currentProjectId, (currentPage.value - 1) * pageSize.value, pageSize.value);
     // Assuming the API returns a list of version history items directly in response for now.
     // If it's an object like { items: [], total: 0 }, adjust accordingly.
     if (Array.isArray(response)) { // Simple array response
@@ -140,8 +150,8 @@ const fetchProjectVersions = async () => {
     }
 
   } catch (err) {
-    console.error(`Failed to fetch versions for project ${props.projectId}:`, err);
-    error.value = `Failed to load data versions for project ${props.projectId}. Please try again later.`;
+    console.error(`Failed to fetch versions for project ${currentProjectId}:`, err);
+    error.value = `Failed to load data versions for project ${currentProjectId}. Please try again later.`;
     versions.value = []; // Clear data on error
     totalVersions.value = 0;
   } finally {
@@ -163,7 +173,7 @@ const viewDataVersion = (versionEntry) => {
   // router.push({ 
   //   name: 'ProjectDataView', // A new route for viewing specific version data
   //   params: { 
-  //     projectId: props.projectId, 
+  //     projectId: Number(props.projectId), // Ensure projectId is Number
   //     dataEntityId: versionEntry.entity_id, 
   //     versionNumber: versionEntry.version 
   //   } 

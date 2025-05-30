@@ -9,7 +9,7 @@ from backend.core import security
 from backend.models.database_models import get_db
 
 router = APIRouter(
-    prefix="/api/v1/projects",
+    prefix="/projects", # Corrected prefix to avoid double prefixing
     tags=["projects"],
     dependencies=[Depends(security.get_current_active_user)], # All routes require active user
 )

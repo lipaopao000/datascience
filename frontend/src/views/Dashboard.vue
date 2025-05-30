@@ -248,23 +248,22 @@ const initModelPerformanceChart = async () => {
   const chart = echarts.init(modelPerformanceChart.value)
   
   try {
-    const modelsResponse = await mlAPI.getModels()
-    const models = modelsResponse.models || []
+    // const modelsResponse = await mlAPI.getModels() // Commented out: mlAPI.getModels is no longer a generic endpoint
+    // const models = modelsResponse.models || []
 
     const modelNames = []
     const accuracies = []
 
-    models.forEach(model => {
-      modelNames.push(model.model_id.substring(0, 8)); // Use model ID or a truncated version
-      // Assuming 'accuracy' is the key for classification models, 'r2' for regression
-      if (model.task_type === 'classification' && model.metrics?.accuracy !== undefined) {
-        accuracies.push(model.metrics.accuracy);
-      } else if (model.task_type === 'regression' && model.metrics?.r2 !== undefined) {
-        accuracies.push(model.metrics.r2);
-      } else {
-        accuracies.push(0); // Default if metric not found
-      }
-    });
+    // models.forEach(model => {
+    //   modelNames.push(model.model_id.substring(0, 8));
+    //   if (model.task_type === 'classification' && model.metrics?.accuracy !== undefined) {
+    //     accuracies.push(model.metrics.accuracy);
+    //   } else if (model.task_type === 'regression' && model.metrics?.r2 !== undefined) {
+    //     accuracies.push(model.metrics.r2);
+    //   } else {
+    //     accuracies.push(0);
+    //   }
+    // });
 
     const option = {
       title: {
@@ -283,7 +282,7 @@ const initModelPerformanceChart = async () => {
       },
       yAxis: {
         type: 'value',
-        max: 1, // Max accuracy/R2 is 1
+        max: 1,
         axisLabel: {
           formatter: '{value}'
         }
@@ -301,9 +300,8 @@ const initModelPerformanceChart = async () => {
     chart.setOption(option)
   } catch (error) {
     console.error('初始化模型性能图表失败:', error);
-    // Fallback to a default chart or empty state if API fails
     chart.setOption({
-      title: { text: '模型性能对比 (加载失败)', left: 'center' },
+      title: { text: '模型性能对比 (加载失败或无数据)', left: 'center' },
       xAxis: { type: 'category', data: [] },
       yAxis: { type: 'value' },
       series: [{ type: 'bar', data: [] }]
@@ -315,25 +313,23 @@ const initModelPerformanceChart = async () => {
 const loadStats = async () => {
   try {
     // 获取数据集数量
-    const dataListResponse = await dataAPI.getDataList()
-    const dataCount = dataListResponse.data_ids?.length || 0
-    stats.value[0].value = dataCount
-    stats.value[1].value = dataCount // Assuming each dataset is one file for simplicity
+    // const dataListResponse = await dataAPI.getDataList() // Commented out: dataAPI.getDataList is no longer a generic endpoint
+    // const dataCount = dataListResponse.data_ids?.length || 0
+    // stats.value[0].value = dataCount
+    // stats.value[1].value = dataCount
 
     // 获取模型数量
-    const modelsResponse = await mlAPI.getModels()
-    const modelCount = modelsResponse.models?.length || 0
-    stats.value[2].value = modelCount
+    // const modelsResponse = await mlAPI.getModels() // Commented out
+    // const modelCount = modelsResponse.models?.length || 0
+    // stats.value[2].value = modelCount
 
     // 获取特征数量 (需要遍历所有特征文件并汇总，暂时设为0)
-    // This would require a new backend API to get total feature count across all data_ids
-    // For now, we'll keep it as 0 or a placeholder.
     stats.value[3].value = 0; // Placeholder
 
     // 添加活动记录
     recentActivities.value.unshift({
       id: Date.now(),
-      content: `加载了 ${dataCount} 个数据集`, // Updated activity text
+      content: `加载了统计数据`, // Generic activity text
       timestamp: new Date().toLocaleString(),
       color: '#409EFF'
     })

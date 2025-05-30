@@ -247,8 +247,17 @@ const submitUpload = async () => {
   try {
     let response;
     if (props.projectId) {
-      progressText.value = `正在上传到项目 ${props.projectId}...`;
-      response = await projectAPI.uploadProjectData(props.projectId, formData);
+      const currentProjectId = Number(props.projectId); // Explicitly convert to Number
+      console.log('DataUpload - Uploading to projectId:', currentProjectId);
+
+      if (isNaN(currentProjectId) || currentProjectId <= 0) {
+        ElMessage.error('无效的项目ID，无法上传数据。');
+        uploading.value = false;
+        return;
+      }
+
+      progressText.value = `正在上传到项目 ${currentProjectId}...`;
+      response = await projectAPI.uploadProjectData(currentProjectId, formData);
        // Assuming response structure for project upload might be: { message: string, files: [...] }
       // Update results based on this new structure
       uploadProgress.value = 100;

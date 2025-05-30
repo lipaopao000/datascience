@@ -14,7 +14,8 @@ from backend.core.config import settings
 
 # Database related imports
 from backend.models.database_models import Base, engine, get_db, SessionLocal # engine here will be updated later
-from backend.crud import crud_system_setting # For default settings
+from backend.crud import crud_system_setting, crud_user # For default settings and user creation
+from backend.core import security # For password hashing
 
 # Routers
 from backend.routers import (
@@ -72,11 +73,46 @@ def create_tables():
         if db:
             db.close()
 
+def create_default_superuser():
+    db = SessionLocal()
+    try:
+        from backend.models import schemas # Local import to ensure scope
+        # Check if any user exists
+        if crud_user.get_users(db, skip=0, limit=1):
+            logger.info("Users already exist. Skipping default superuser creation.")
+            return
+
+        # Create a default superuser if no users exist
+        default_username = settings.FIRST_SUPERUSER_USERNAME
+        default_password = settings.FIRST_SUPERUSER_PASSWORD
+        default_email = settings.FIRST_SUPERUSER_EMAIL
+
+        if not default_username or not default_password:
+            logger.warning("Default superuser username or password not set in environment variables. Skipping default superuser creation.")
+            return
+
+        user_in = schemas.UserCreate(
+            username=default_username,
+            email=default_email,
+            password=default_password,
+            is_superuser=True,
+            is_active=True
+        )
+        crud_user.create_user(db, user=user_in)
+        logger.info(f"Default superuser '{default_username}' created successfully.")
+    except Exception as e:
+        logger.error(f"Error creating default superuser: {e}", exc_info=True)
+    finally:
+        if db:
+            db.close()
+
 # Define the lifespan context manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Application startup: Creating database tables...")
     create_tables()
+    logger.info("Application startup: Creating default superuser if none exists...")
+    create_default_superuser()
     # Initialize any other services or configurations needed at startup
     # For schema_router, if it still needs direct service injection:
     if hasattr(schema_router, '_schema_service_instance'):
@@ -117,22 +153,31 @@ app = FastAPI(
 )
 
 # CORS Middleware
-if settings.BACKEND_CORS_ORIGINS:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-else: # Default to allow all if not specified, for local development ease
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# Temporarily allow all origins for debugging CORS issues
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# Original logic (commented out for debugging)
+# if settings.BACKEND_CORS_ORIGINS:
+#     app.add_middleware(
+#         CORSMiddleware,
+#         allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+#         allow_credentials=True,
+#         allow_methods=["*"],
+#         allow_headers=["*"],
+#     )
+# else: # Default to allow all if not specified, for local development ease
+#     app.add_middleware(
+#         CORSMiddleware,
+#         allow_origins=["*"],
+#         allow_credentials=True,
+#         allow_methods=["*"],
+#         allow_headers=["*"],
+#     )
 
 
 # Include new routers with API_V1_STR prefix

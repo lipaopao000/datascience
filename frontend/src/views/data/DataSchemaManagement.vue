@@ -109,9 +109,16 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, defineProps } from 'vue'; // Import defineProps
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { schemaAPI } from '@/api'; 
+
+const props = defineProps({
+  projectId: {
+    type: Number,
+    required: true
+  }
+});
 
 const schemas = ref([]);
 const loading = ref(false);
@@ -154,7 +161,14 @@ const isEditing = computed(() => !!currentSchema.value.id);
 const loadSchemas = async () => {
   loading.value = true;
   try {
-    const response = await schemaAPI.getSchemas();
+    // Explicitly convert projectId to Number
+    const currentProjectId = Number(props.projectId);
+    if (isNaN(currentProjectId) || currentProjectId <= 0) {
+      ElMessage.error('无效的项目ID，无法加载数据模式。');
+      schemas.value = [];
+      return;
+    }
+    const response = await schemaAPI.getSchemas(currentProjectId, 0, 100);
     schemas.value = response || []; 
   } catch (error) {
     ElMessage.error('加载数据模式列表失败');
@@ -194,7 +208,13 @@ const handleDeleteSchema = async (schema) => {
       type: 'warning',
     });
     loading.value = true;
-    await schemaAPI.deleteSchema(schema.id);
+    // Explicitly convert projectId to Number
+    const currentProjectId = Number(props.projectId);
+    if (isNaN(currentProjectId) || currentProjectId <= 0) {
+      ElMessage.error('无效的项目ID，无法删除数据模式。');
+      return;
+    }
+    await schemaAPI.deleteSchema(currentProjectId, schema.id); 
     ElMessage.success('删除成功');
     await loadSchemas(); 
   } catch (error) {
@@ -236,10 +256,17 @@ const saveSchema = async () => {
       payload.columns = null;
     }
 
+    // Explicitly convert projectId to Number
+    const currentProjectId = Number(props.projectId);
+    if (isNaN(currentProjectId) || currentProjectId <= 0) {
+      ElMessage.error('无效的项目ID，无法保存数据模式。');
+      return;
+    }
+
     if (isEditing.value) {
-      await schemaAPI.updateSchema(payload.id, payload);
+      await schemaAPI.updateSchema(currentProjectId, payload.id, payload);
     } else {
-      await schemaAPI.createSchema(payload);
+      await schemaAPI.createSchema(currentProjectId, payload);
     }
     ElMessage.success('保存成功');
     dialogVisible.value = false;
@@ -257,10 +284,18 @@ const formatDate = (dateString) => {
   return new Date(dateString).toLocaleString('zh-CN');
 };
 
-onMounted(() => {
-  loadSchemas();
-});
+import { watch } from 'vue'; // Import watch
 
+// ... existing code ...
+
+watch(() => props.projectId, (newProjectId) => {
+  if (newProjectId && newProjectId > 0) { // Only load if projectId is valid
+    loadSchemas();
+  } else {
+    schemas.value = []; // Clear schemas if projectId is invalid
+    ElMessage.warning('无效的项目ID，无法加载数据模式。');
+  }
+}, { immediate: true }); // Run immediately on component mount
 </script>
 
 <style scoped>
