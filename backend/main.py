@@ -149,17 +149,19 @@ app = FastAPI(
     version="2.0.0", # Or move to settings: settings.APP_VERSION
     description="API for managing data science projects, users, data versions, and system settings.",
     openapi_url=f"{settings.API_V1_STR}/openapi.json", # Standardize openapi url
-    lifespan=lifespan # Pass the lifespan context manager
+    lifespan=lifespan, # Pass the lifespan context manager
+    redirect_slashes=False # Disable automatic trailing slash redirects
 )
 
 # CORS Middleware
 # Temporarily allow all origins for debugging CORS issues
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allow all origins
+    allow_origins=["http://localhost:3000"], # Allow frontend origin
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"], # Allow all methods
+    allow_headers=["*"], # Allow all headers
+    expose_headers=["*"] # Expose all headers
 )
 # Original logic (commented out for debugging)
 # if settings.BACKEND_CORS_ORIGINS:
@@ -189,7 +191,7 @@ app.include_router(system_settings_router.router, prefix=settings.API_V1_STR, ta
 # Include existing schema_router (if it's still being used and adapted)
 # Ensure its dependencies are correctly handled (e.g., via Depends or updated injection)
 # Standardize prefix for schema_router as well
-app.include_router(schema_router.router, prefix=f"{settings.API_V1_STR}/schemas", tags=["Schemas"])
+app.include_router(schema_router.router, prefix=settings.API_V1_STR, tags=["Schemas"])
 app.include_router(task_router.router, prefix=settings.API_V1_STR, tags=["Tasks"]) # Add task router
 app.include_router(experiment_router.router, prefix=settings.API_V1_STR, tags=["Experiments"]) # Add experiment router
 app.include_router(model_registry_router.router, prefix=settings.API_V1_STR, tags=["Model Registry"]) # Add model registry router

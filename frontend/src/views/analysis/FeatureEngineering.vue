@@ -18,13 +18,13 @@
             <h3>特征提取配置</h3>
             
             <el-form :model="featureConfig" label-width="120px">
-              <el-form-item label="选择数据ID">
-                <el-select v-model="selectedDataId" placeholder="请选择数据ID" @change="loadDataDetails">
+              <el-form-item label="选择数据版本">
+                <el-select v-model="selectedDataVersionId" placeholder="请选择数据集版本" @change="loadDataDetails">
                   <el-option
-                    v-for="dataItem in dataList"
-                    :key="dataItem.data_id"
-                    :label="dataItem.data_id"
-                    :value="dataItem.data_id"
+                    v-for="dataVersion in dataVersions"
+                    :key="dataVersion.version_id"
+                    :label="`${dataVersion.data_entity_id} (v${dataVersion.version_number})`"
+                    :value="dataVersion.version_id"
                   />
                 </el-select>
               </el-form-item>
@@ -187,17 +187,27 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, nextTick, watch, defineProps } from 'vue' // Added defineProps
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
-import { dataAPI, featureAPI } from '@/api'
+import { projectAPI } from '@/api' // Changed dataAPI and featureAPI to projectAPI
 
 const route = useRoute()
 
+const props = defineProps({
+  projectId: {
+    type: Number,
+    required: true
+  }
+});
+
 // 数据状态
-const dataList = ref([]) // Renamed from patients
-const selectedDataId = ref(route.query.dataId || '') // Renamed from selectedPatient, and query param from patientId
+const dataVersions = ref([]) // Renamed from dataList to dataVersions
+const selectedDataVersionId = ref(route.query.dataVersionId || '') // Renamed from selectedDataId
+const selectedDataEntityId = ref(route.query.dataEntityId || '') // New: to store data_entity_id
+const selectedVersionNumber = ref(route.query.versionNumber || null) // New: to store version_number
+
 const extractedFeatures = ref(null)
 const extracting = ref(false)
 const activeTab = ref('list')
@@ -221,83 +231,125 @@ const featureConfig = ref({
 })
 
 // 方法
-const loadDataList = async () => { // Renamed from loadPatients
+const loadDataVersions = async () => { // Renamed from loadDataList
+  extracting.value = true; // Using extracting for loading state
   try {
-    const response = await dataAPI.getDataList() // Updated API call
-    dataList.value = response.data_ids || [] // Updated to match backend response
-    
-    if (selectedDataId.value && dataList.value.some(item => item.data_id === selectedDataId.value)) { // Updated logic
-      await loadDataDetails() // Updated function call
+    const currentProjectId = Number(props.projectId);
+    if (isNaN(currentProjectId) || currentProjectId <= 0) {
+      ElMessage.error('无效的项目ID，无法加载数据版本。');
+      dataVersions.value = [];
+      return;
+    }
+    const response = await projectAPI.getProjectVersions(currentProjectId, 0, 100);
+    dataVersions.value = response || [];
+
+    // Attempt to pre-select based on route query or first available
+    if (selectedDataEntityId.value && selectedVersionNumber.value) {
+      const found = dataVersions.value.find(
+        item => item.data_entity_id === selectedDataEntityId.value && item.version_number === Number(selectedVersionNumber.value)
+      );
+      if (found) {
+        selectedDataVersionId.value = found.version_id;
+        await loadDataDetails();
+      } else if (dataVersions.value.length > 0) {
+        selectedDataVersionId.value = dataVersions.value[0].version_id;
+        selectedDataEntityId.value = dataVersions.value[0].data_entity_id;
+        selectedVersionNumber.value = dataVersions.value[0].version_number;
+        await loadDataDetails();
+      }
+    } else if (dataVersions.value.length > 0) {
+      selectedDataVersionId.value = dataVersions.value[0].version_id;
+      selectedDataEntityId.value = dataVersions.value[0].data_entity_id;
+      selectedVersionNumber.value = dataVersions.value[0].version_number;
+      await loadDataDetails();
     }
   } catch (error) {
-    ElMessage.error('获取数据列表失败') // Updated message
-    console.error('获取数据列表失败:', error) // Updated message
+    ElMessage.error('获取数据版本列表失败');
+    console.error('获取数据版本列表失败:', error);
+  } finally {
+    extracting.value = false;
   }
-}
+};
 
-const loadDataDetails = async () => { // Renamed from loadPatientData
-  if (!selectedDataId.value) return // Updated variable
-  
+const loadDataDetails = async () => { // Renamed from loadDataDetails
+  if (!selectedDataVersionId.value || !selectedDataEntityId.value || selectedVersionNumber.value === null) return;
+
   try {
-    const response = await dataAPI.getDataDetails(selectedDataId.value) // Updated API call
-    // 这里可以根据患者数据调整默认配置
-    console.log('数据详情加载完成:', response) // Updated message
+    const currentProjectId = Number(props.projectId);
+    if (isNaN(currentProjectId) || currentProjectId <= 0) {
+      ElMessage.error('无效的项目ID，无法获取数据详情。');
+      return;
+    }
+    const response = await projectAPI.viewProjectDataVersion(
+      currentProjectId,
+      selectedDataEntityId.value,
+      selectedVersionNumber.value,
+      1, // page
+      1 // pageSize - just to get columns, not full data
+    );
+    // Here you might want to store the columns or other metadata if needed for config adjustments
+    console.log('数据详情加载完成:', response);
   } catch (error) {
-    ElMessage.error('获取数据详情失败') // Updated message
-    console.error('获取数据详情失败:', error) // Updated message
+    ElMessage.error('获取数据详情失败');
+    console.error('获取数据详情失败:', error);
   }
-}
+};
 
 const extractFeatures = async () => {
-  if (!selectedDataId.value) { // Updated variable
-    ElMessage.warning('请先选择数据ID') // Updated message
-    return
+  if (!selectedDataVersionId.value || !selectedDataEntityId.value || selectedVersionNumber.value === null) {
+    ElMessage.warning('请先选择数据版本');
+    return;
   }
-  
-  extracting.value = true
-  
+
+  extracting.value = true;
+
   try {
+    const currentProjectId = Number(props.projectId);
+    if (isNaN(currentProjectId) || currentProjectId <= 0) {
+      ElMessage.error('无效的项目ID，无法提取特征。');
+      return;
+    }
+
     const requestData = {
-      data_id: selectedDataId.value, // Updated variable
+      data_entity_id: selectedDataEntityId.value,
+      version_number: selectedVersionNumber.value,
       ...featureConfig.value
-    }
-    
-    const response = await featureAPI.extractFeatures(requestData)
-    
-    // 模拟特征数据结构
+    };
+
+    const response = await projectAPI.extractProjectFeatures(currentProjectId, requestData);
+
     extractedFeatures.value = {
-      total_features: response.features?.length || 50,
-      statistical_count: 20,
-      temporal_count: 15,
-      frequency_count: 15,
-      features: generateMockFeatures()
-    }
-    
-    ElMessage.success('特征提取完成')
-    
-    // 渲染图表
-    await nextTick()
-    renderCharts()
-    
+      total_features: response.features?.length || 0,
+      statistical_count: response.statistical_count || 0,
+      temporal_count: response.temporal_count || 0,
+      frequency_count: response.frequency_count || 0,
+      features: response.features || []
+    };
+
+    ElMessage.success('特征提取完成');
+
+    await nextTick();
+    renderCharts();
+
   } catch (error) {
-    ElMessage.error('特征提取失败')
-    console.error('特征提取失败:', error)
-    
-    // 使用模拟数据
+    ElMessage.error(`特征提取失败: ${error.response?.data?.detail || error.message}`);
+    console.error('特征提取失败:', error);
+
+    // Fallback to mock data if API fails
     extractedFeatures.value = {
       total_features: 50,
       statistical_count: 20,
       temporal_count: 15,
       frequency_count: 15,
       features: generateMockFeatures()
-    }
-    
-    await nextTick()
-    renderCharts()
+    };
+
+    await nextTick();
+    renderCharts();
   } finally {
-    extracting.value = false
+    extracting.value = false;
   }
-}
+};
 
 const generateMockFeatures = () => {
   const featureTypes = ['统计', '时序', '频域']
@@ -535,8 +587,32 @@ watch(activeTab, async (newTab) => {
 })
 
 onMounted(() => {
-  loadDataList() // Changed from loadPatients
-})
+  // Watch for projectId changes and load data versions
+  watch(() => props.projectId, (newProjectId) => {
+    if (newProjectId && newProjectId > 0) {
+      loadDataVersions();
+    } else {
+      dataVersions.value = [];
+      selectedDataVersionId.value = '';
+      selectedDataEntityId.value = '';
+      selectedVersionNumber.value = null;
+      extractedFeatures.value = null;
+      ElMessage.warning('无效的项目ID，无法加载数据版本。');
+    }
+  }, { immediate: true }); // Run immediately on component mount
+});
+
+// Watch for selectedDataVersionId change to update selectedDataEntityId and selectedVersionNumber
+watch(selectedDataVersionId, (newVersionId) => {
+  const selectedVersion = dataVersions.value.find(v => v.version_id === newVersionId);
+  if (selectedVersion) {
+    selectedDataEntityId.value = selectedVersion.data_entity_id;
+    selectedVersionNumber.value = selectedVersion.version_number;
+  } else {
+    selectedDataEntityId.value = '';
+    selectedVersionNumber.value = null;
+  }
+});
 </script>
 
 <style scoped>

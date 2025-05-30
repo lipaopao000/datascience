@@ -82,33 +82,39 @@
             
             <div class="result-details" v-if="result.details">
               <el-descriptions :title="`文件: ${result.fileName}`" :column="2" border>
-                <el-descriptions-item label="数据文件数" v-if="result.details.patient_count !== undefined">
-                  {{ result.details.patient_count }}
+                <el-descriptions-item label="数据实体ID">
+                  {{ result.details.entity_id }}
                 </el-descriptions-item>
-                 <el-descriptions-item label="数据实体ID" v-if="result.details.data_entity_id">
-                  {{ result.details.data_entity_id }}
+                <el-descriptions-item label="版本号">
+                  {{ result.details.version }}
                 </el-descriptions-item>
-                <el-descriptions-item label="版本号" v-if="result.details.version_number !== undefined">
-                  {{ result.details.version_number }}
+                <el-descriptions-item label="文件标识符">
+                  {{ result.details.file_identifier || 'N/A' }}
                 </el-descriptions-item>
-                <el-descriptions-item label="文件类型" v-if="result.details.file_info?.source">
-                  {{ result.details.file_info?.source || '未知' }}
+                <el-descriptions-item label="实体类型">
+                  {{ result.details.entity_type }}
                 </el-descriptions-item>
-                <el-descriptions-item label="数据ID (旧)" v-if="result.details.file_info?.data_id">
-                  {{ result.details.file_info.data_id }}
+                <el-descriptions-item label="备注">
+                  {{ result.details.notes || '无' }}
                 </el-descriptions-item>
-                 <el-descriptions-item label="分组名称" v-if="result.details.file_info?.group_name">
-                  {{ result.details.file_info.group_name }}
+                <el-descriptions-item label="上传时间">
+                  {{ result.details.created_at ? new Date(result.details.created_at).toLocaleString() : 'N/A' }}
                 </el-descriptions-item>
-                <el-descriptions-item label="处理文件数" v-if="result.details.file_info?.extracted_files">
-                  {{ result.details.file_info.extracted_files }}
-                </el-descriptions-item>
-                <el-descriptions-item label="数据行数" v-if="result.details.file_info?.rows">
-                  {{ result.details.file_info.rows }}
-                </el-descriptions-item>
-                <el-descriptions-item label="数据列数" v-if="result.details.file_info?.columns">
-                  {{ result.details.file_info.columns.length }}
-                </el-descriptions-item>
+                <!-- Additional metadata from version_metadata if available -->
+                <template v-if="result.details.version_metadata">
+                  <el-descriptions-item label="数据行数" v-if="result.details.version_metadata.rows !== undefined">
+                    {{ result.details.version_metadata.rows }}
+                  </el-descriptions-item>
+                  <el-descriptions-item label="数据列数" v-if="result.details.version_metadata.columns !== undefined">
+                    {{ result.details.version_metadata.columns }}
+                  </el-descriptions-item>
+                  <el-descriptions-item label="原始文件名" v-if="result.details.version_metadata.original_filename">
+                    {{ result.details.version_metadata.original_filename }}
+                  </el-descriptions-item>
+                  <el-descriptions-item label="文件大小 (bytes)" v-if="result.details.version_metadata.file_size !== undefined">
+                    {{ result.details.version_metadata.file_size }}
+                  </el-descriptions-item>
+                </template>
               </el-descriptions>
             </div>
           </div>
@@ -267,15 +273,15 @@ const submitUpload = async () => {
       if (response.files && Array.isArray(response.files)) {
         response.files.forEach(fileSummary => {
             uploadResults.value.push({
-            title: `文件 ${fileSummary.file_name} 处理成功`,
+            title: `文件 ${fileSummary.file_identifier} 处理成功`,
             type: 'success',
-            description: `数据实体ID: ${fileSummary.data_entity_id}, 版本: ${fileSummary.version_number}`,
-            details: fileSummary, // Contains data_entity_id, version_number, etc.
-            fileName: fileSummary.file_name
+            description: `数据实体ID: ${fileSummary.entity_id}, 版本: ${fileSummary.version}`,
+            details: fileSummary, // This is the VersionHistoryResponse object
+            fileName: fileSummary.file_identifier
           });
         });
       } else {
-         // Handle cases where 'files' might not be an array or present, e.g., single file upload response
+         // This block might not be needed if backend always returns 'files' array
          uploadResults.value.push({
             title: '上传完成',
             type: 'success',

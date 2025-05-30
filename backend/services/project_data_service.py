@@ -91,17 +91,24 @@ class ProjectDataService:
         notes: Optional[str] = "Initial data upload"
     ) -> Optional[VersionHistoryResponse]:
         """
-        Handles uploaded data, saves it to storage, and creates an initial version history entry.
+        Handles uploaded data, saves it to storage, and creates a new version history entry.
+        Uses the same entity_id for all uploads to the same project.
         """
-        # 1. Determine a unique entity_id for this new data asset
-        data_entity_id = str(uuid.uuid4())
+        # 1. Try to get existing entity_id for this project
+        latest_version_entry = crud_version_history.get_latest_version_for_entity(
+            self.db, project_id, "data", None
+        )
         
-        # 2. Determine the initial version number (always 1 for a new entity)
-        new_version_number = 1
+        # Use existing entity_id if found, otherwise create new
+        if latest_version_entry:
+            data_entity_id = latest_version_entry.entity_id
+            new_version_number = latest_version_entry.version + 1
+        else:
+            data_entity_id = str(uuid.uuid4())
+            new_version_number = 1
         
-        # 3. Determine the storage path for this initial version
-        # Use the original filename for the stored file
-        stored_filename = original_filename # Or sanitize/rename if needed
+        # 2. Determine the storage path for this new version
+        stored_filename = original_filename
         versioned_file_path = get_versioned_data_path(
             self.db, project_id, "data", data_entity_id, new_version_number, stored_filename
         )
@@ -109,7 +116,7 @@ class ProjectDataService:
         # Ensure the directory exists
         os.makedirs(os.path.dirname(versioned_file_path), exist_ok=True)
 
-        # 4. Save the file content to the determined path
+        # 3. Save the file content to the determined path
         try:
             with open(versioned_file_path, "wb") as f:
                 f.write(file_content)
@@ -118,8 +125,7 @@ class ProjectDataService:
             logger.error(f"Failed to save uploaded file to {versioned_file_path}: {e}", exc_info=True)
             return None
 
-        # 5. Optionally, read the file to extract metadata (e.g., columns, shape)
-        # This part can be expanded based on file type (CSV, Excel, etc.)
+        # 4. Optionally, read the file to extract metadata (e.g., columns, shape)
         file_metadata = {}
         try:
             if stored_filename.endswith(".csv"):
@@ -129,20 +135,17 @@ class ProjectDataService:
                 file_metadata["records"] = len(df)
                 file_metadata["content_type"] = "text/csv"
             elif stored_filename.endswith(".pkl"):
-                # For PKL, we might not want to load the whole thing just for metadata
-                # Or load it if it's small enough
                 file_metadata["content_type"] = "application/octet-stream"
-            # Add other file types as needed
         except Exception as e:
             logger.warning(f"Could not extract metadata from {stored_filename}: {e}")
             file_metadata["parsing_error"] = str(e)
 
-        # 6. Create a VersionHistory entry
+        # 5. Create a VersionHistory entry
         version_metadata = {
             "original_filename": original_filename,
             "stored_filename": stored_filename,
-            "size_bytes": versioned_file_path.stat().st_size,
-            **file_metadata # Include extracted metadata
+            "size_bytes": os.path.getsize(versioned_file_path),
+            **file_metadata
         }
         
         version_create_payload = schemas.VersionHistoryCreate(
@@ -150,7 +153,7 @@ class ProjectDataService:
             entity_id=data_entity_id,
             notes=notes,
             version_metadata=version_metadata,
-            file_identifier=stored_filename # The name of the file as stored
+            file_identifier=stored_filename
         )
         
         new_db_entry = crud_version_history.create_version_history(
@@ -158,12 +161,15 @@ class ProjectDataService:
         )
         
         if not new_db_entry:
-            # If DB entry creation fails, consider cleaning up the saved file
-            os.remove(versioned_file_path)
+            # Clean up file if DB entry creation fails
+            try:
+                os.remove(versioned_file_path)
+            except OSError:
+                pass
             logger.error(f"Failed to create version history entry for {original_filename}. File deleted.")
             return None
 
-        return schemas.VersionHistoryResponse.model_validate(new_db_entry)
+        return schemas.VersionHistoryResponse.model_validate(new_db_entry, from_attributes=True)
 
 
     def clean_and_version_data(
@@ -354,7 +360,7 @@ class ProjectDataService:
         )
         
         # Convert SQLAlchemy model to Pydantic response model
-        return VersionHistoryResponse.model_validate(new_db_entry)
+        return VersionHistoryResponse.model_validate(new_db_entry, from_attributes=True)
 
     def rollback_to_version(
         self,

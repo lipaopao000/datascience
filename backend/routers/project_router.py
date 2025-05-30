@@ -102,10 +102,10 @@ from backend.services.project_data_service import ProjectDataService # Import th
 def get_project_data_service(db: Session = Depends(get_db)) -> ProjectDataService:
     return ProjectDataService(db)
 
-@router.post("/{project_id}/data/upload", response_model=schemas.VersionHistoryResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{project_id}/data/upload", response_model=schemas.FileUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_project_data(
     project_id: int,
-    file: UploadFile = File(...),
+    files: List[UploadFile] = File(...), # Changed to List[UploadFile]
     notes: Optional[str] = Form(None),
     data_service: ProjectDataService = Depends(get_project_data_service), # Use the service dependency
     current_user: models.User = Depends(security.get_current_active_user) # Ensures user is active
@@ -117,21 +117,30 @@ async def upload_project_data(
     if not current_user.is_superuser and db_project.owner_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to upload data to this project")
 
-    # Read file content
-    file_content = await file.read()
-    
-    new_version_entry = data_service.upload_and_version_data(
-        project_id=project_id,
-        file_content=file_content,
-        original_filename=file.filename,
-        user_id=current_user.id, # Pass the user ID
-        notes=notes
-    )
-    
-    if new_version_entry is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to upload data or create new version.")
+    uploaded_versions = []
+    for file in files: # Iterate over each uploaded file
+        file_content = await file.read()
         
-    return new_version_entry
+        new_version_entry = data_service.upload_and_version_data(
+            project_id=project_id,
+            file_content=file_content,
+            original_filename=file.filename,
+            user_id=current_user.id, # Pass the user ID
+            notes=notes
+        )
+        
+        if new_version_entry is None:
+            # Handle individual file upload failure, or raise an exception for the whole batch
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to upload file {file.filename} or create new version.")
+        uploaded_versions.append(new_version_entry)
+        
+    # Return a list of VersionHistoryResponse for all uploaded files
+    # Or a custom response model that includes a list of these
+    # For simplicity, let's return a list of the responses.
+    # If the frontend expects a single object, we might need a wrapper schema.
+    # For now, let's assume the frontend can handle a list or we'll adjust the response_model.
+    # Given the frontend expects `response.files` as an array, this should work.
+    return {"message": f"Successfully uploaded {len(uploaded_versions)} files.", "files": uploaded_versions}
 
 @router.get("/{project_id}/data/{data_entity_id}/versions/{version_number}/view", response_model=schemas.GenericDataResponse)
 async def view_project_data_version(

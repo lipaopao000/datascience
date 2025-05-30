@@ -34,105 +34,105 @@ const routes = [
     path: '/projects/:projectId',
     name: 'ProjectDetail',
     component: () => import('@/views/project/ProjectDetail.vue'),
-    props: true,
+    props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/projects/:projectId/data/upload',
     name: 'ProjectDataUpload',
     component: () => import('@/views/data/DataUpload.vue'),
-    props: true,
+    props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/projects/:projectId/data-list',
     name: 'ProjectDataList',
     component: () => import('@/views/data/DataList.vue'), // Re-using DataList.vue, it needs projectId
-    props: true,
+    props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/projects/:projectId/schemas',
     name: 'ProjectSchemas',
     component: () => import('@/views/data/DataSchemaManagement.vue'), // Re-using DataSchemaManagement.vue
-    props: true,
+    props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/projects/:projectId/data/clean',
     name: 'ProjectDataClean',
     component: () => import('@/views/data/DataClean.vue'), // Re-using DataClean.vue
-    props: true,
+    props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/projects/:projectId/analysis/explorer',
     name: 'ProjectDataExplorer',
     component: () => import('@/views/analysis/DataExplorer.vue'),
-    props: true,
+    props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/projects/:projectId/analysis/visualization',
     name: 'ProjectDataVisualization',
     component: () => import('@/views/analysis/DataVisualization.vue'),
-    props: true,
+    props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/projects/:projectId/analysis/features',
     name: 'ProjectFeatureEngineering',
     component: () => import('@/views/analysis/FeatureEngineering.vue'),
-    props: true,
+    props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/projects/:projectId/analysis/statistics',
     name: 'ProjectStatisticsAnalysis',
     component: () => import('@/views/analysis/StatisticsAnalysis.vue'),
-    props: true,
+    props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/projects/:projectId/models',
     name: 'ProjectModelManagement',
     component: () => import('@/views/ml/ModelManagement.vue'), // Re-using ModelManagement.vue
-    props: true,
+    props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/projects/:projectId/ml/train',
     name: 'ProjectModelTraining',
     component: () => import('@/views/ml/ModelTraining.vue'),
-    props: true,
+    props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/projects/:projectId/ml/predict',
     name: 'ProjectModelPrediction',
     component: () => import('@/views/ml/ModelPrediction.vue'),
-    props: true,
+    props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/projects/:projectId/ml/evaluation',
     name: 'ProjectModelEvaluation',
     component: () => import('@/views/ml/ModelEvaluation.vue'),
-    props: true,
+    props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/experiments/:experimentId/runs',
     name: 'ExperimentRuns',
     component: () => import('@/views/analysis/ExperimentRuns.vue'),
-    props: true,
+    props: route => ({ experimentId: Number(route.params.experimentId) }),
     meta: { requiresAuth: true }
   },
   {
     path: '/registered-models/:modelId/versions',
     name: 'ModelVersions',
     component: () => import('@/views/ml/ModelVersions.vue'),
-    props: true,
+    props: route => ({ modelId: Number(route.params.modelId) }),
     meta: { requiresAuth: true }
   },
   // Keep generic routes if they are still intended to be accessible without project context,

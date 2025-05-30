@@ -9,6 +9,7 @@
   "data_column_base_name": "high",
   "sampling_rate_hz": 50.0,
   "id": "e0b6ae06-d326-4fd9-ab8c-2867f7656859",
+  "project_id": 2,
   "created_at": "2025-05-28T22:09:11.105357",
   "updated_at": "2025-05-28T22:09:11.105394"
 }

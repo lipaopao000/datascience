@@ -22,13 +22,13 @@
                 <el-input v-model="trainingConfig.model_name" placeholder="输入模型名称" />
               </el-form-item>
 
-              <el-form-item label="选择数据">
-                <el-select v-model="trainingConfig.data_id" placeholder="选择数据集" @change="handleDataIdChange">
+              <el-form-item label="选择数据版本">
+                <el-select v-model="selectedDataVersionId" placeholder="选择数据集版本" @change="handleDataVersionChange">
                   <el-option
-                    v-for="id in availableDataIds"
-                    :key="id"
-                    :label="id"
-                    :value="id"
+                    v-for="dataVersion in availableDataVersions"
+                    :key="dataVersion.version_id"
+                    :label="`${dataVersion.data_entity_id} (v${dataVersion.version_number})`"
+                    :value="dataVersion.version_id"
                   />
                 </el-select>
               </el-form-item>
@@ -217,12 +217,23 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, nextTick, watch, defineProps } from 'vue' // Added defineProps
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
-import { mlAPI, dataAPI, featureAPI } from '@/api'
+import { projectAPI, experimentAPI, modelRegistryAPI } from '@/api' // Changed APIs to projectAPI, experimentAPI, modelRegistryAPI
 
-const availableDataIds = ref([])
+const props = defineProps({
+  projectId: {
+    type: Number,
+    required: true
+  }
+});
+
+const availableDataVersions = ref([]) // Renamed from availableDataIds
+const selectedDataVersionId = ref('') // New: to store selected version_id
+const selectedDataEntityId = ref('') // New: to store data_entity_id
+const selectedVersionNumber = ref(null) // New: to store version_number
+
 const availableColumns = ref([])
 const training = ref(false)
 const trainingProgress = ref(0)
@@ -241,11 +252,11 @@ const columnsToAdd = ref([]); // For selecting columns to add to the table
 
 const trainingConfig = ref({
   model_name: '',
-  data_id: '',
+  data_entity_id: '', // Changed from data_id
+  version_number: null, // New: to store version_number
   algorithm: 'random_forest',
   task_type: 'classification',
   target_column: '',
-  // selected_feature_columns and feature_types_to_extract are replaced by featureConfigTableData
   train_ratio: 0.8,
   random_state: 42,
   cross_validation: true,
@@ -262,41 +273,70 @@ const trainingConfig = ref({
 
 const loadAvailableDataAndFeatures = async () => {
   try {
-    const response = await dataAPI.getDataList()
-    availableDataIds.value = response.data_ids.map(item => item.data_id) || [] // Assuming data_ids is an array of objects
-    if (availableDataIds.value.length > 0) {
-      trainingConfig.value.data_id = availableDataIds.value[0]
-      await loadColumnsForData()
+    const currentProjectId = Number(props.projectId);
+    if (isNaN(currentProjectId) || currentProjectId <= 0) {
+      ElMessage.error('无效的项目ID，无法加载数据版本。');
+      availableDataVersions.value = [];
+      return;
+    }
+    const response = await projectAPI.getProjectVersions(currentProjectId, 0, 100);
+    availableDataVersions.value = response || [];
+
+    if (availableDataVersions.value.length > 0) {
+      selectedDataVersionId.value = availableDataVersions.value[0].version_id;
+      selectedDataEntityId.value = availableDataVersions.value[0].data_entity_id;
+      selectedVersionNumber.value = availableDataVersions.value[0].version_number;
+      await loadColumnsForData();
     }
   } catch (error) {
-    console.error('获取数据列表失败:', error)
-    ElMessage.error('获取数据列表失败')
+    console.error('获取数据版本列表失败:', error);
+    ElMessage.error('获取数据版本列表失败');
   }
-}
+};
 
-const handleDataIdChange = async () => {
+const handleDataVersionChange = async () => { // Renamed from handleDataIdChange
   featureConfigTableData.value = []; // Reset feature config when data_id changes
   columnsToAdd.value = [];
+  const selectedVersion = availableDataVersions.value.find(v => v.version_id === selectedDataVersionId.value);
+  if (selectedVersion) {
+    selectedDataEntityId.value = selectedVersion.data_entity_id;
+    selectedVersionNumber.value = selectedVersion.version_number;
+  } else {
+    selectedDataEntityId.value = '';
+    selectedVersionNumber.value = null;
+  }
   await loadColumnsForData();
 };
 
 const loadColumnsForData = async () => {
-  if (!trainingConfig.value.data_id) {
-    availableColumns.value = []
-    return
+  if (!selectedDataEntityId.value || selectedVersionNumber.value === null) {
+    availableColumns.value = [];
+    return;
   }
   try {
-    const response = await dataAPI.getDataDetails(trainingConfig.value.data_id)
-    availableColumns.value = response.columns || []
+    const currentProjectId = Number(props.projectId);
+    if (isNaN(currentProjectId) || currentProjectId <= 0) {
+      ElMessage.error('无效的项目ID，无法获取数据列。');
+      availableColumns.value = [];
+      return;
+    }
+    const response = await projectAPI.viewProjectDataVersion(
+      currentProjectId,
+      selectedDataEntityId.value,
+      selectedVersionNumber.value,
+      1, // page
+      1 // pageSize - just to get columns, not full data
+    );
+    availableColumns.value = response.columns || [];
     if (!availableColumns.value.includes(trainingConfig.value.target_column)) {
-      trainingConfig.value.target_column = ''
+      trainingConfig.value.target_column = '';
     }
   } catch (error) {
-    console.error(`获取数据 ${trainingConfig.value.data_id} 的列失败:`, error)
-    ElMessage.error(`获取数据 ${trainingConfig.value.data_id} 的列失败`)
-    availableColumns.value = []
+    console.error(`获取数据 ${selectedDataEntityId.value} v${selectedVersionNumber.value} 的列失败:`, error);
+    ElMessage.error(`获取数据 ${selectedDataEntityId.value} v${selectedVersionNumber.value} 的列失败`);
+    availableColumns.value = [];
   }
-}
+};
 
 const addSelectedColumnsToFeatureTable = () => {
   columnsToAdd.value.forEach(colName => {
@@ -311,85 +351,99 @@ const removeColumnFromFeatureTable = (index) => {
   featureConfigTableData.value.splice(index, 1);
 };
 
-
 const updateAlgorithmConfig = () => {
   const defaultParams = {
     random_forest: { n_estimators: 100, max_depth: 10, min_samples_split: 2 },
     logistic_regression: { C: 1.0, max_iter: 1000 },
-    svm: { C: 1.0, kernel: 'rbf' }
-  }
-  trainingConfig.value.params = { ...trainingConfig.value.params, ...defaultParams[trainingConfig.value.algorithm] }
-}
+    svm: { C: 1.0, kernel: 'rbf' },
+  };
+  trainingConfig.value.params = { ...trainingConfig.value.params, ...defaultParams[trainingConfig.value.algorithm] };
+};
 
 const startTraining = async () => {
-  if (!trainingConfig.value.model_name) { ElMessage.warning('请输入模型名称'); return }
-  if (!trainingConfig.value.data_id) { ElMessage.warning('请选择数据集'); return }
-  if (!trainingConfig.value.target_column) { ElMessage.warning('请选择目标变量'); return }
-  if (featureConfigTableData.value.length === 0) { ElMessage.warning('请配置特征列'); return }
+  if (!trainingConfig.value.model_name) { ElMessage.warning('请输入模型名称'); return; }
+  if (!selectedDataEntityId.value || selectedVersionNumber.value === null) { ElMessage.warning('请选择数据集版本'); return; }
+  if (!trainingConfig.value.target_column) { ElMessage.warning('请选择目标变量'); return; }
+  if (featureConfigTableData.value.length === 0) { ElMessage.warning('请配置特征列'); return; }
   if (featureConfigTableData.value.some(fc => fc.selectedFeatureTypes.length === 0)) {
     ElMessage.warning('请为所有配置的特征列选择至少一种特征类型'); return;
   }
-  
-  training.value = true
-  trainingProgress.value = 0
-  progressStatus.value = ''
-  progressText.value = '准备训练数据...'
-  trainingResult.value = null
-  
+
+  training.value = true;
+  trainingProgress.value = 0;
+  progressStatus.value = '';
+  progressText.value = '准备训练数据...';
+  trainingResult.value = null;
+
   const progressInterval = setInterval(() => {
     if (trainingProgress.value < 90) {
-      trainingProgress.value += Math.random() * 5
-      updateProgressText()
+      trainingProgress.value += Math.random() * 5;
+      updateProgressText();
     }
-  }, 500)
-  
-  try {
-    progressText.value = '正在提取特征...'
-    const feature_config_payload = {}
-    featureConfigTableData.value.forEach(fc => {
-      feature_config_payload[fc.columnName] = fc.selectedFeatureTypes
-    })
+  }, 500);
 
-    const extractResponse = await featureAPI.extractFeatures({
-      data_id: trainingConfig.value.data_id,
+  try {
+    const currentProjectId = Number(props.projectId);
+    if (isNaN(currentProjectId) || currentProjectId <= 0) {
+      ElMessage.error('无效的项目ID，无法开始训练。');
+      clearInterval(progressInterval);
+      training.value = false;
+      return;
+    }
+
+    progressText.value = '正在提取特征...';
+    const feature_config_payload = {};
+    featureConfigTableData.value.forEach(fc => {
+      feature_config_payload[fc.columnName] = fc.selectedFeatureTypes;
+    });
+
+    const extractResponse = await projectAPI.extractProjectFeatures(currentProjectId, {
+      data_entity_id: selectedDataEntityId.value,
+      version_number: selectedVersionNumber.value,
       feature_config: feature_config_payload
-    })
-    
-    if (!extractResponse.success) {
-      throw new Error(extractResponse.features.message || '特征提取失败')
+    });
+
+    if (!extractResponse.features || extractResponse.features.length === 0) {
+      throw new Error(extractResponse.message || '特征提取失败，没有提取到任何特征。');
     }
-    
-    progressText.value = '正在训练模型...'
+
+    progressText.value = '正在训练模型...';
     const trainPayload = {
-      data_id: trainingConfig.value.data_id, // Add data_id to payload
+      data_entity_id: selectedDataEntityId.value,
+      version_number: selectedVersionNumber.value,
+      model_name: trainingConfig.value.model_name,
       model_type: trainingConfig.value.algorithm,
-      features: Object.keys(extractResponse.features.extracted_features).filter(f => f !== 'data_id'),
+      features: extractResponse.features.map(f => f.name), // Use extracted feature names
       target: trainingConfig.value.target_column,
-      model_params: trainingConfig.value.params
-    }
-    
-    const response = await mlAPI.trainModel(trainPayload)
-    
-    clearInterval(progressInterval)
-    trainingProgress.value = 100
-    progressStatus.value = 'success'
-    progressText.value = '训练完成'
-    trainingResult.value = response
-    ElMessage.success('模型训练完成')
-    await nextTick()
-    renderCharts()
-    
+      model_params: trainingConfig.value.params,
+      train_ratio: trainingConfig.value.train_ratio,
+      random_state: trainingConfig.value.random_state,
+      cross_validation: trainingConfig.value.cross_validation,
+      cv_folds: trainingConfig.value.cv_folds
+    };
+
+    const response = await projectAPI.trainProjectModel(currentProjectId, trainPayload);
+
+    clearInterval(progressInterval);
+    trainingProgress.value = 100;
+    progressStatus.value = 'success';
+    progressText.value = '训练完成';
+    trainingResult.value = response;
+    ElMessage.success('模型训练完成');
+    await nextTick();
+    renderCharts();
+
   } catch (error) {
-    clearInterval(progressInterval)
-    trainingProgress.value = 100
-    progressStatus.value = 'exception'
-    progressText.value = '训练失败'
-    ElMessage.error(`模型训练失败: ${error.message || error}`)
-    console.error('模型训练失败:', error)
+    clearInterval(progressInterval);
+    trainingProgress.value = 100;
+    progressStatus.value = 'exception';
+    progressText.value = '训练失败';
+    ElMessage.error(`模型训练失败: ${error.response?.data?.detail || error.message || error}`);
+    console.error('模型训练失败:', error);
   } finally {
-    training.value = false
+    training.value = false;
   }
-}
+};
 
 const updateProgressText = () => {
   const texts = ['加载数据...','特征提取中...','数据预处理...','模型训练中...','参数优化...','交叉验证...','模型评估...']
@@ -443,8 +497,23 @@ watch(activeTab, async (newTab) => {
 })
 
 onMounted(() => {
-  loadAvailableDataAndFeatures()
-})
+  // Watch for projectId changes and load data versions
+  watch(() => props.projectId, (newProjectId) => {
+    if (newProjectId && newProjectId > 0) {
+      loadAvailableDataAndFeatures();
+    } else {
+      availableDataVersions.value = [];
+      selectedDataVersionId.value = '';
+      selectedDataEntityId.value = '';
+      selectedVersionNumber.value = null;
+      availableColumns.value = [];
+      trainingConfig.value.target_column = '';
+      featureConfigTableData.value = [];
+      columnsToAdd.value = [];
+      ElMessage.warning('无效的项目ID，无法加载数据版本。');
+    }
+  }, { immediate: true }); // Run immediately on component mount
+});
 </script>
 
 <style scoped>

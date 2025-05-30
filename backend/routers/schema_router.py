@@ -9,7 +9,6 @@ from backend.models import database_models as models # Import models for User
 from backend.models.database_models import get_db # Import get_db
 
 router = APIRouter(
-    prefix="/projects/{project_id}/schemas", # New project-scoped prefix
     tags=["Project Schemas"], # Updated tag
     dependencies=[Depends(security.get_current_active_user)], # All routes require active user
 )
@@ -19,6 +18,7 @@ router = APIRouter(
 _schema_service_instance: Optional[SchemaService] = None
 
 def get_schema_service(db: Session = Depends(get_db)) -> SchemaService: # Pass db to service
+    global _schema_service_instance # Declare as global
     print(f"DEBUG: get_schema_service called. _schema_service_instance is: {_schema_service_instance}")
     if _schema_service_instance is None:
         # Re-instantiate if not set, though main.py should handle this
@@ -47,23 +47,22 @@ get_schema_service_instance = Depends(get_schema_service)
 verify_project_access_dependency = Depends(verify_project_access)
 
 
-@router.post("/", response_model=DataSchemaResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/projects/{project_id}/schemas", response_model=DataSchemaResponse, status_code=status.HTTP_201_CREATED)
 async def create_schema_endpoint(
     project_id: int,
     schema_data: DataSchemaCreate,
-    current_user: Annotated[models.User, active_user], # Moved to be before other default args if it's a dependency
+    current_user: Annotated[models.User, active_user],
     db_project: models.Project = verify_project_access_dependency,
     schema_service: SchemaService = get_schema_service_instance,
 ):
     try:
-        # Pass project_id to the service method
         return schema_service.create_schema(project_id=project_id, schema_data=schema_data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"创建数据模式失败: {str(e)}")
 
-@router.get("/", response_model=List[DataSchemaResponse])
+@router.get("/projects/{project_id}/schemas", response_model=List[DataSchemaResponse])
 async def get_schemas_endpoint(
     project_id: int,
     current_user: Annotated[models.User, active_user],
@@ -71,12 +70,11 @@ async def get_schemas_endpoint(
     schema_service: SchemaService = get_schema_service_instance,
 ):
     try:
-        # Pass project_id to the service method
         return schema_service.get_schemas(project_id=project_id)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"获取数据模式列表失败: {str(e)}")
 
-@router.get("/{schema_id}", response_model=DataSchemaResponse)
+@router.get("/projects/{project_id}/schemas/{schema_id}", response_model=DataSchemaResponse)
 async def get_schema_endpoint(
     project_id: int,
     schema_id: str,
@@ -85,7 +83,6 @@ async def get_schema_endpoint(
     schema_service: SchemaService = get_schema_service_instance,
 ):
     try:
-        # Pass project_id to the service method
         schema = schema_service.get_schema(project_id=project_id, schema_id=schema_id)
         if not schema:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="数据模式未找到")
@@ -93,7 +90,7 @@ async def get_schema_endpoint(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"获取数据模式失败: {str(e)}")
 
-@router.put("/{schema_id}", response_model=DataSchemaResponse)
+@router.put("/projects/{project_id}/schemas/{schema_id}", response_model=DataSchemaResponse)
 async def update_schema_endpoint(
     project_id: int,
     schema_id: str,
@@ -103,17 +100,16 @@ async def update_schema_endpoint(
     schema_service: SchemaService = get_schema_service_instance,
 ):
     try:
-        # Pass project_id to the service method
         updated_schema = schema_service.update_schema(project_id=project_id, schema_id=schema_id, schema_data=schema_data)
         if not updated_schema:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="数据模式未找到")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="数据模式未找到或不属于当前项目")
         return updated_schema
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"更新数据模式失败: {str(e)}")
 
-@router.delete("/{schema_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/projects/{project_id}/schemas/{schema_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_schema_endpoint(
     project_id: int,
     schema_id: str,
@@ -122,9 +118,8 @@ async def delete_schema_endpoint(
     schema_service: SchemaService = get_schema_service_instance,
 ):
     try:
-        # Pass project_id to the service method
         if not schema_service.delete_schema(project_id=project_id, schema_id=schema_id):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="数据模式未找到")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="数据模式未找到或不属于当前项目")
         return
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"删除数据模式失败: {str(e)}")

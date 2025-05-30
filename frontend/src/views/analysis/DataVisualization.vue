@@ -24,13 +24,13 @@
             <h3>可视化配置</h3>
             
             <el-form :model="chartConfig" label-width="100px">
-              <el-form-item label="选择数据">
-                <el-select v-model="selectedDataId" placeholder="请选择数据集" @change="loadDataDetails">
+              <el-form-item label="选择数据版本">
+                <el-select v-model="selectedDataVersionId" placeholder="请选择数据集版本" @change="loadDataDetails">
                   <el-option
-                    v-for="dataItem in dataIds"
-                    :key="dataItem.data_id"
-                    :label="dataItem.data_id"
-                    :value="dataItem.data_id"
+                    v-for="dataVersion in dataVersions"
+                    :key="dataVersion.version_id"
+                    :label="`${dataVersion.data_entity_id} (v${dataVersion.version_number})`"
+                    :value="dataVersion.version_id"
                   />
                 </el-select>
               </el-form-item>
@@ -163,17 +163,27 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, nextTick, watch, defineProps } from 'vue' // Added defineProps
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
-import { dataAPI } from '@/api'
+import { projectAPI } from '@/api' // Changed dataAPI to projectAPI
 
 const route = useRoute()
 
+const props = defineProps({
+  projectId: {
+    type: Number,
+    required: true
+  }
+});
+
 // 数据状态
-const dataIds = ref([]) // Renamed from patients
-const selectedDataId = ref(route.query.dataId || '') // Renamed from selectedPatient
+const dataVersions = ref([]) // Renamed from dataIds to dataVersions
+const selectedDataVersionId = ref(route.query.dataVersionId || '') // Renamed from selectedDataId
+const selectedDataEntityId = ref(route.query.dataEntityId || '') // New: to store data_entity_id
+const selectedVersionNumber = ref(route.query.versionNumber || null) // New: to store version_number
+
 const dataDetails = ref(null) // Renamed from patientData, stores full data details
 const chartData = ref(null) // Stores data specifically for charting (limited rows)
 const chartRef = ref(null)
@@ -217,87 +227,134 @@ const needsColorField = computed(() => {
 })
 
 // 方法
-const loadDataIds = async () => { // Renamed from loadPatients
+const loadDataVersions = async () => { // Renamed from loadDataIds
+  loading.value = true;
   try {
-    const response = await dataAPI.getDataList()
-    dataIds.value = response.data_ids || []
-    
-    if (selectedDataId.value && dataIds.value.some(item => item.data_id === selectedDataId.value)) { // Updated logic
-      await loadDataDetails()
-    } else if (dataIds.value.length > 0) {
-      selectedDataId.value = dataIds.value[0].data_id // Auto-select first if no query param, access data_id
-      await loadDataDetails()
+    const currentProjectId = Number(props.projectId);
+    if (isNaN(currentProjectId) || currentProjectId <= 0) {
+      ElMessage.error('无效的项目ID，无法加载数据版本。');
+      dataVersions.value = [];
+      return;
+    }
+    const response = await projectAPI.getProjectVersions(currentProjectId, 0, 100);
+    dataVersions.value = response || [];
+
+    // Attempt to pre-select based on route query or first available
+    if (selectedDataEntityId.value && selectedVersionNumber.value) {
+      const found = dataVersions.value.find(
+        item => item.data_entity_id === selectedDataEntityId.value && item.version_number === Number(selectedVersionNumber.value)
+      );
+      if (found) {
+        selectedDataVersionId.value = found.version_id; // Assuming version_id is unique identifier for select
+        await loadDataDetails();
+      } else if (dataVersions.value.length > 0) {
+        selectedDataVersionId.value = dataVersions.value[0].version_id;
+        selectedDataEntityId.value = dataVersions.value[0].data_entity_id;
+        selectedVersionNumber.value = dataVersions.value[0].version_number;
+        await loadDataDetails();
+      }
+    } else if (dataVersions.value.length > 0) {
+      selectedDataVersionId.value = dataVersions.value[0].version_id;
+      selectedDataEntityId.value = dataVersions.value[0].data_entity_id;
+      selectedVersionNumber.value = dataVersions.value[0].version_number;
+      await loadDataDetails();
     }
   } catch (error) {
-    ElMessage.error('获取数据列表失败')
-    console.error('获取数据列表失败:', error)
+    ElMessage.error('获取数据版本列表失败');
+    console.error('获取数据版本列表失败:', error);
+  } finally {
+    loading.value = false;
   }
-}
+};
 
-const loadDataDetails = async () => { // Renamed from loadPatientData
-  if (!selectedDataId.value) return
-  
+const loadDataDetails = async () => { // Renamed from loadDataDetails
+  if (!selectedDataVersionId.value || !selectedDataEntityId.value || selectedVersionNumber.value === null) return;
+
   try {
-    const response = await dataAPI.getDataDetails(selectedDataId.value)
-    dataDetails.value = response // Store full data details
-    
+    const currentProjectId = Number(props.projectId);
+    if (isNaN(currentProjectId) || currentProjectId <= 0) {
+      ElMessage.error('无效的项目ID，无法获取数据详情。');
+      return;
+    }
+    const response = await projectAPI.viewProjectDataVersion(
+      currentProjectId,
+      selectedDataEntityId.value,
+      selectedVersionNumber.value,
+      1, // page
+      1000 // pageSize - get up to 1000 rows for initial view
+    );
+    dataDetails.value = response; // Store full data details
+
     // Update data range max based on actual records
-    chartConfig.value.dataRange = [0, Math.min(1000, maxDataPoints.value)] // Default to first 1000 points or max
-    
+    chartConfig.value.dataRange = [0, Math.min(1000, dataDetails.value?.records || 100)]; // Default to first 1000 points or max
+
     // Auto-select default X/Y axis if available
     if (availableColumns.value.length > 0) {
       if (needsXAxis.value && !chartConfig.value.xAxis) {
-        chartConfig.value.xAxis = availableColumns.value[0]
+        chartConfig.value.xAxis = availableColumns.value[0];
       }
       if (needsYAxis.value && chartConfig.value.yAxis.length === 0 && availableColumns.value.length > 1) {
-        chartConfig.value.yAxis = [availableColumns.value[1]]
+        chartConfig.value.yAxis = [availableColumns.value[1]];
       }
     }
-    
+
   } catch (error) {
-    ElMessage.error('获取数据详情失败')
-    console.error('获取数据详情失败:', error)
+    ElMessage.error('获取数据详情失败');
+    console.error('获取数据详情失败:', error);
   }
-}
+};
 
 const generateChart = async () => {
-  if (!selectedDataId.value) {
-    ElMessage.warning('请先选择数据集')
-    return
+  if (!selectedDataVersionId.value || !selectedDataEntityId.value || selectedVersionNumber.value === null) {
+    ElMessage.warning('请先选择数据集');
+    return;
   }
   if (chartConfig.value.chartType === 'timeseries' && (!chartConfig.value.xAxis || chartConfig.value.yAxis.length === 0)) {
-    ElMessage.warning('时间序列图需要选择X轴和至少一个Y轴字段')
-    return
+    ElMessage.warning('时间序列图需要选择X轴和至少一个Y轴字段');
+    return;
   }
   if (chartConfig.value.chartType === 'scatter' && (!chartConfig.value.xAxis || chartConfig.value.yAxis.length === 0)) {
-    ElMessage.warning('散点图需要选择X轴和至少一个Y轴字段')
-    return
+    ElMessage.warning('散点图需要选择X轴和至少一个Y轴字段');
+    return;
   }
-  
+
   try {
-    // getVisualizationData already limits data to 1000 rows by default
-    const response = await dataAPI.getVisualizationData(selectedDataId.value)
-    
-    // Filter data based on dataRange
-    const startIndex = chartConfig.value.dataRange[0]
-    const endIndex = chartConfig.value.dataRange[1]
-    
-    chartData.value = {
-      data_id: response.data_id,
-      columns: response.columns,
-      data: response.data.slice(startIndex, endIndex)
+    const currentProjectId = Number(props.projectId);
+    if (isNaN(currentProjectId) || currentProjectId <= 0) {
+      ElMessage.error('无效的项目ID，无法生成图表。');
+      return;
     }
-    
-    await nextTick()
-    renderChart()
-    
-    ElMessage.success('图表生成成功')
-    
+
+    // Fetch data for visualization based on selected range
+    const startIndex = chartConfig.value.dataRange[0];
+    const endIndex = chartConfig.value.dataRange[1];
+    const pageSize = endIndex - startIndex;
+    const page = Math.floor(startIndex / pageSize) + 1; // Calculate page based on start index and page size
+
+    const response = await projectAPI.viewProjectDataVersion(
+      currentProjectId,
+      selectedDataEntityId.value,
+      selectedVersionNumber.value,
+      page,
+      pageSize
+    );
+
+    chartData.value = {
+      data_id: response.data_id, // This might be data_entity_id
+      columns: response.columns,
+      data: response.data
+    };
+
+    await nextTick();
+    renderChart();
+
+    ElMessage.success('图表生成成功');
+
   } catch (error) {
-    ElMessage.error('生成图表失败')
-    console.error('生成图表失败:', error)
+    ElMessage.error('生成图表失败');
+    console.error('生成图表失败:', error);
   }
-}
+};
 
 const renderChart = () => {
   if (!chartRef.value || !chartData.value || chartData.value.data.length === 0) return
@@ -320,7 +377,7 @@ const renderChart = () => {
 const generateChartOption = () => {
   const baseOption = {
     title: {
-      text: chartConfig.value.title || `${selectedDataId.value} - ${chartConfig.value.chartType}图`,
+      text: chartConfig.value.title || `${selectedDataEntityId.value} v${selectedVersionNumber.value} - ${chartConfig.value.chartType}图`,
       left: 'center'
     },
     tooltip: {
@@ -409,7 +466,7 @@ const exportChart = () => {
   })
   
   const link = document.createElement('a')
-  link.download = `${selectedDataId.value}_${chartConfig.value.chartType}_${Date.now()}.png`
+  link.download = `${selectedDataEntityId.value}_v${selectedVersionNumber.value}_${chartConfig.value.chartType}_${Date.now()}.png`
   link.href = url
   link.click()
   
@@ -448,8 +505,33 @@ watch(availableColumns, (newCols) => {
 
 
 onMounted(() => {
-  loadDataIds()
-})
+  // Watch for projectId changes and load data versions
+  watch(() => props.projectId, (newProjectId) => {
+    if (newProjectId && newProjectId > 0) {
+      loadDataVersions();
+    } else {
+      dataVersions.value = [];
+      selectedDataVersionId.value = '';
+      selectedDataEntityId.value = '';
+      selectedVersionNumber.value = null;
+      dataDetails.value = null;
+      chartData.value = null;
+      ElMessage.warning('无效的项目ID，无法加载数据版本。');
+    }
+  }, { immediate: true }); // Run immediately on component mount
+});
+
+// Watch for selectedDataVersionId change to update selectedDataEntityId and selectedVersionNumber
+watch(selectedDataVersionId, (newVersionId) => {
+  const selectedVersion = dataVersions.value.find(v => v.version_id === newVersionId);
+  if (selectedVersion) {
+    selectedDataEntityId.value = selectedVersion.data_entity_id;
+    selectedVersionNumber.value = selectedVersion.version_number;
+  } else {
+    selectedDataEntityId.value = '';
+    selectedVersionNumber.value = null;
+  }
+});
 </script>
 
 <style scoped>

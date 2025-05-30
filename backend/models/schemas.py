@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime # Import datetime for timestamp fields
 
 
-class DataUploadResponse(BaseModel):
+class DataUploadResponse(BaseModel): # Keep the old one if it's still used elsewhere for generic upload
     success: bool
     message: str
     patient_count: int # For zip, or 1 for single csv
@@ -52,6 +52,7 @@ class ColumnDefinition(BaseModel):
     # Add other properties like description, required, etc. if needed
 
 class DataSchemaBase(BaseModel):
+    project_id: int # Add project_id
     name: str
     description: Optional[str] = None
     schema_type: str = "standard" # "standard" or "high_frequency_wide"
@@ -182,7 +183,12 @@ class VersionHistoryResponse(VersionHistoryBase):
     id: int
     version: int # Actual version number from DB
     project_id: int # Link to project
-    created_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+# FileUploadResponse needs to be after VersionHistoryResponse
+class FileUploadResponse(BaseModel):
+    message: str
+    files: List[VersionHistoryResponse] # List of successfully uploaded file versions
 
 # System Settings
 class SystemSettingBase(BaseModel):

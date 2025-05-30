@@ -16,11 +16,12 @@ class SchemaService:
     def _get_schema_path(self, schema_id: str) -> str:
         return os.path.join(SCHEMAS_DIR, f"{schema_id}.json")
 
-    def create_schema(self, schema_data: DataSchemaCreate) -> DataSchemaResponse:
+    def create_schema(self, project_id: int, schema_data: DataSchemaCreate) -> DataSchemaResponse:
         schema_id = str(uuid.uuid4())
         
         full_schema_data = schema_data.dict()
         full_schema_data["id"] = schema_id
+        full_schema_data["project_id"] = project_id # Add project_id
         full_schema_data["created_at"] = datetime.now().isoformat()
         full_schema_data["updated_at"] = datetime.now().isoformat()
 
@@ -55,7 +56,7 @@ class SchemaService:
         
         return DataSchemaResponse(**full_schema_data)
 
-    def get_schemas(self) -> List[DataSchemaResponse]:
+    def get_schemas(self, project_id: int) -> List[DataSchemaResponse]:
         schemas = []
         for filename in os.listdir(SCHEMAS_DIR):
             if filename.endswith(".json"):
@@ -63,31 +64,41 @@ class SchemaService:
                 try:
                     with open(file_path, 'r', encoding='utf-8') as f:
                         schema_data = json.load(f)
-                        schemas.append(DataSchemaResponse(**schema_data))
+                        # Filter by project_id
+                        if schema_data.get("project_id") == project_id:
+                            schemas.append(DataSchemaResponse(**schema_data))
                 except Exception as e:
                     print(f"Error loading schema file {filename}: {e}") # Or use logger
         schemas.sort(key=lambda s: s.name) # Sort by name
         return schemas
 
-    def get_schema(self, schema_id: str) -> Optional[DataSchemaResponse]:
+    def get_schema(self, project_id: int, schema_id: str) -> Optional[DataSchemaResponse]:
         file_path = self._get_schema_path(schema_id)
         if not os.path.exists(file_path):
             return None
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 schema_data = json.load(f)
-                return DataSchemaResponse(**schema_data)
+                # Ensure schema belongs to the project
+                if schema_data.get("project_id") == project_id:
+                    return DataSchemaResponse(**schema_data)
+                else:
+                    return None # Schema found but belongs to a different project
         except Exception as e:
             print(f"Error loading schema file {schema_id}.json: {e}") # Or use logger
             return None
 
-    def update_schema(self, schema_id: str, schema_update_data: DataSchemaUpdate) -> Optional[DataSchemaResponse]:
+    def update_schema(self, project_id: int, schema_id: str, schema_update_data: DataSchemaUpdate) -> Optional[DataSchemaResponse]:
         file_path = self._get_schema_path(schema_id)
         if not os.path.exists(file_path):
             return None
         
         with open(file_path, 'r', encoding='utf-8') as f:
             current_schema_data = json.load(f)
+
+        # Ensure schema belongs to the project before updating
+        if current_schema_data.get("project_id") != project_id:
+            return None # Not authorized or schema not found in this project
 
         update_data = schema_update_data.dict(exclude_unset=True) # Get only provided fields
         
@@ -142,9 +153,20 @@ class SchemaService:
             
         return DataSchemaResponse(**current_schema_data)
 
-    def delete_schema(self, schema_id: str) -> bool:
+    def delete_schema(self, project_id: int, schema_id: str) -> bool:
         file_path = self._get_schema_path(schema_id)
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            return True
-        return False
+        if not os.path.exists(file_path):
+            return False
+        
+        # Read schema to verify project_id before deleting
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                schema_data = json.load(f)
+                if schema_data.get("project_id") == project_id:
+                    os.remove(file_path)
+                    return True
+                else:
+                    return False # Schema found but belongs to a different project
+        except Exception as e:
+            print(f"Error reading schema file for deletion {schema_id}.json: {e}")
+            return False

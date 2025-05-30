@@ -18,21 +18,21 @@
             <h3>清洗配置</h3>
             
             <el-form :model="cleanConfig" label-width="120px">
-              <el-form-item label="选择患者">
-                <el-select v-model="selectedPatient" placeholder="请选择患者" @change="loadPatientData">
+              <el-form-item label="选择数据版本">
+                <el-select v-model="selectedDataVersionId" placeholder="请选择数据集版本">
                   <el-option
-                    v-for="patient in patients"
-                    :key="patient"
-                    :label="patient"
-                    :value="patient"
+                    v-for="dataVersion in dataVersions"
+                    :key="dataVersion.version_id"
+                    :label="`${dataVersion.data_entity_id} (v${dataVersion.version_number})`"
+                    :value="dataVersion.version_id"
                   />
                 </el-select>
               </el-form-item>
 
               <el-form-item label="数据类型">
                 <el-checkbox-group v-model="cleanConfig.data_types">
-                  <el-checkbox label="ecg">ECG数据</el-checkbox>
-                  <el-checkbox label="mv">MV数据</el-checkbox>
+                  <el-checkbox value="ecg">ECG数据</el-checkbox>
+                  <el-checkbox value="mv">MV数据</el-checkbox>
                 </el-checkbox-group>
               </el-form-item>
 
@@ -40,8 +40,8 @@
               
               <el-form-item label="处理方式">
                 <el-radio-group v-model="cleanConfig.missing_value_strategy">
-                  <el-radio label="drop">删除</el-radio>
-                  <el-radio label="fill">填充</el-radio>
+                  <el-radio value="drop">删除</el-radio>
+                  <el-radio value="fill">填充</el-radio>
                 </el-radio-group>
               </el-form-item>
 
@@ -71,9 +71,9 @@
 
               <el-form-item label="异常值处理">
                 <el-radio-group v-model="cleanConfig.outlier_action">
-                  <el-radio label="remove">删除</el-radio>
-                  <el-radio label="cap">限制</el-radio>
-                  <el-radio label="transform">转换</el-radio>
+                  <el-radio value="remove">删除</el-radio>
+                  <el-radio value="cap">限制</el-radio>
+                  <el-radio value="transform">转换</el-radio>
                 </el-radio-group>
               </el-form-item>
 
@@ -141,7 +141,7 @@
                     </el-table-column>
                   </el-table>
                 </div>
-                <el-empty v-else description="请选择患者查看数据" />
+                <el-empty v-else description="请选择数据版本查看数据" />
               </el-tab-pane>
 
               <el-tab-pane label="清洗后数据" name="cleaned">
@@ -215,10 +215,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, defineProps, watch } from 'vue' // Added defineProps and watch
+import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { projectAPI } from '@/api' // Changed from dataAPI to projectAPI
+import { projectAPI } from '@/api'
 
 const props = defineProps({
   projectId: {
@@ -230,8 +230,11 @@ const props = defineProps({
 const route = useRoute()
 
 // Data state
-const dataEntities = ref([]) // Renamed from patients
-const selectedDataEntity = ref(null) // Stores { entity_id, version }
+const dataVersions = ref([]) // Renamed from dataEntities
+const selectedDataVersionId = ref('') // New: to store selected version_id
+const selectedDataEntityId = ref('') // New: to store data_entity_id
+const selectedVersionNumber = ref(null) // New: to store version_number
+
 const originalData = ref(null)
 const cleanedData = ref(null)
 const cleaningReport = ref(null)
@@ -250,60 +253,73 @@ const cleanConfig = ref({
   resample_freq: ''
 })
 
-// Load data entities for the project
-const loadDataEntities = async (projectId) => {
-  const currentProjectId = Number(projectId); // Explicitly convert to Number
-  console.log('DataClean - Loading data entities for projectId:', currentProjectId);
+// Load data versions for the project
+const loadDataVersions = async (projectId) => {
+  const currentProjectId = Number(projectId);
+  console.log('DataClean - Loading data versions for projectId:', currentProjectId);
 
   if (isNaN(currentProjectId) || currentProjectId <= 0) {
-    ElMessage.error('无效的项目ID，无法加载数据实体。');
-    dataEntities.value = [];
+    ElMessage.error('无效的项目ID，无法加载数据版本。');
+    dataVersions.value = [];
     return;
   }
 
   try {
     const response = await projectAPI.getProjectVersions(currentProjectId);
-    // Filter for 'data' entity_type and group by entity_id to get latest version
-    const entitiesMap = new Map();
-    response.filter(v => v.entity_type === 'data').forEach(version => {
-      if (!entitiesMap.has(version.entity_id) || version.version > entitiesMap.get(version.entity_id).version) {
-        entitiesMap.set(version.entity_id, version);
-      }
-    });
-    dataEntities.value = Array.from(entitiesMap.values()); // Store latest versions of each data entity
+    dataVersions.value = response.filter(v => v.entity_type === 'data') || []; // Filter for 'data' entity_type
     
-    // If a data entity was specified in query (e.g., from ProjectDataTab), select it
-    const queryEntityId = route.query.dataEntityId;
-    if (queryEntityId) {
-      const foundEntity = dataEntities.value.find(e => e.entity_id === queryEntityId);
-      if (foundEntity) {
-        selectedDataEntity.value = foundEntity;
-        await loadDataPreview(foundEntity.entity_id, foundEntity.version);
+    // Attempt to pre-select based on route query or first available
+    const queryDataEntityId = route.query.dataEntityId;
+    const queryVersionNumber = route.query.versionNumber;
+
+    if (queryDataEntityId && queryVersionNumber) {
+      const found = dataVersions.value.find(
+        item => item.data_entity_id === queryDataEntityId && item.version_number === Number(queryVersionNumber)
+      );
+      if (found) {
+        selectedDataVersionId.value = found.version_id;
+        selectedDataEntityId.value = found.data_entity_id;
+        selectedVersionNumber.value = found.version_number;
+        await loadDataPreview();
+      } else if (dataVersions.value.length > 0) {
+        selectedDataVersionId.value = dataVersions.value[0].version_id;
+        selectedDataEntityId.value = dataVersions.value[0].data_entity_id;
+        selectedVersionNumber.value = dataVersions.value[0].version_number;
+        await loadDataPreview();
       }
+    } else if (dataVersions.value.length > 0) {
+      selectedDataVersionId.value = dataVersions.value[0].version_id;
+      selectedDataEntityId.value = dataVersions.value[0].data_entity_id;
+      selectedVersionNumber.value = dataVersions.value[0].version_number;
+      await loadDataPreview();
     }
   } catch (error) {
-    ElMessage.error('获取数据实体列表失败');
-    console.error('获取数据实体列表失败:', error);
+    ElMessage.error('获取数据版本列表失败');
+    console.error('获取数据版本列表失败:', error);
   }
 }
 
 // Load data preview for selected entity and version
-const loadDataPreview = async (entityId, version) => {
-  if (!entityId || !version) return;
+const loadDataPreview = async () => {
+  if (!selectedDataEntityId.value || selectedVersionNumber.value === null) return;
   
-  const currentProjectId = Number(props.projectId); // Explicitly convert to Number
+  const currentProjectId = Number(props.projectId);
   if (isNaN(currentProjectId) || currentProjectId <= 0) {
     ElMessage.error('无效的项目ID，无法加载数据预览。');
     return;
   }
 
   try {
-    const response = await projectAPI.viewProjectDataVersion(currentProjectId, entityId, version);
+    const response = await projectAPI.viewProjectDataVersion(
+      currentProjectId,
+      selectedDataEntityId.value,
+      selectedVersionNumber.value
+    );
     
     originalData.value = {
       shape: response.shape,
       columns: response.columns,
-      preview: response.data, // Use full data for preview, or slice if too large
+      preview: response.data,
       missing_count: calculateMissingCount(response.data, response.columns),
       outlier_count: 0 // Backend should provide this if possible, or calculate client-side
     };
@@ -321,44 +337,48 @@ const loadDataPreview = async (entityId, version) => {
 
 // Apply cleaning configuration
 const applyCleaningConfig = async () => {
-  if (!selectedDataEntity.value) {
-    ElMessage.warning('请先选择数据实体');
+  if (!selectedDataEntityId.value || selectedVersionNumber.value === null) {
+    ElMessage.warning('请先选择数据版本');
     return;
   }
   
   cleaning.value = true;
   
   try {
-    // Construct cleaning_config based on the form
+    const currentProjectId = Number(props.projectId);
+    if (isNaN(currentProjectId) || currentProjectId <= 0) {
+      ElMessage.error('无效的项目ID，无法应用清洗配置。');
+      cleaning.value = false;
+      return;
+    }
+
     const cleaningRequestPayload = {
       cleaning_config: {
         remove_outliers: cleanConfig.value.outlier_methods.length > 0,
-        outlier_method: cleanConfig.value.outlier_methods[0] || null, // Assuming single method for simplicity
+        outlier_method: cleanConfig.value.outlier_methods[0] || null,
         fill_missing: cleanConfig.value.missing_value_strategy === 'fill',
         missing_method: cleanConfig.value.fill_method,
-        smooth_data: false, // Add UI for this if needed
-        smooth_window: 5, // Add UI for this if needed
+        smooth_data: false,
+        smooth_window: 5,
         normalization_method: cleanConfig.value.normalization_method || null,
         resample_freq: cleanConfig.value.resample_freq || null,
         zscore_threshold: cleanConfig.value.zscore_threshold,
         outlier_action: cleanConfig.value.outlier_action,
       },
-      notes: `Cleaned data for entity ${selectedDataEntity.value.entity_id} version ${selectedDataEntity.value.version}`
+      notes: `Cleaned data for entity ${selectedDataEntityId.value} version ${selectedVersionNumber.value}`
     };
 
     const response = await projectAPI.cleanProjectDataVersion(
-      props.projectId,
-      selectedDataEntity.value.entity_id,
-      selectedDataEntity.value.version,
+      currentProjectId,
+      selectedDataEntityId.value,
+      selectedVersionNumber.value,
       cleaningRequestPayload
     );
     
-    // The response from cleanProjectDataVersion is a VersionHistoryResponse
-    // We need to fetch the preview of the newly cleaned data version
-    const newCleanedVersion = response; // This is the new version entry
+    const newCleanedVersion = response;
     
     const cleanedDataPreviewResponse = await projectAPI.viewProjectDataVersion(
-      props.projectId,
+      currentProjectId,
       newCleanedVersion.entity_id,
       newCleanedVersion.version
     );
@@ -371,9 +391,6 @@ const applyCleaningConfig = async () => {
       outlier_count: 0 // Backend should provide this in report
     };
     
-    // The backend's clean endpoint doesn't return a detailed report directly in the VersionHistoryResponse.
-    // A full report would need a separate endpoint or be part of version_metadata.
-    // For now, we'll simulate a basic report.
     cleaningReport.value = {
       processing_time: (Math.random() * 10).toFixed(2),
       original_rows: originalData.value?.shape?.[0] || 0,
@@ -421,13 +438,15 @@ const formatValue = (value) => {
   return value;
 }
 
-// Watch for projectId changes and load data entities
+// Watch for projectId changes and load data versions
 watch(() => props.projectId, (newProjectId) => {
-  if (newProjectId && Number(newProjectId) > 0) { // Ensure it's a valid positive number
-    loadDataEntities(newProjectId);
+  if (newProjectId && Number(newProjectId) > 0) {
+    loadDataVersions(newProjectId);
   } else {
-    dataEntities.value = [];
-    selectedDataEntity.value = null;
+    dataVersions.value = [];
+    selectedDataVersionId.value = '';
+    selectedDataEntityId.value = '';
+    selectedVersionNumber.value = null;
     originalData.value = null;
     cleanedData.value = null;
     cleaningReport.value = null;
@@ -435,10 +454,19 @@ watch(() => props.projectId, (newProjectId) => {
   }
 }, { immediate: true });
 
-// Watch for selectedDataEntity changes to load its preview
-watch(selectedDataEntity, (newVal) => {
-  if (newVal) {
-    loadDataPreview(newVal.entity_id, newVal.version);
+// Watch for selectedDataVersionId change to update selectedDataEntityId and selectedVersionNumber
+watch(selectedDataVersionId, (newVersionId) => {
+  const selectedVersion = dataVersions.value.find(v => v.version_id === newVersionId);
+  if (selectedVersion) {
+    selectedDataEntityId.value = selectedVersion.data_entity_id;
+    selectedVersionNumber.value = selectedVersion.version_number;
+    loadDataPreview();
+  } else {
+    selectedDataEntityId.value = '';
+    selectedVersionNumber.value = null;
+    originalData.value = null;
+    cleanedData.value = null;
+    cleaningReport.value = null;
   }
 });
 </script>
