@@ -3,36 +3,36 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>Projects</span>
-          <el-button type="primary" @click="showCreateProjectForm = true">Create Project</el-button>
+          <span>{{ $t('projectList.projects') }}</span>
+          <el-button type="primary" @click="showCreateProjectForm = true">{{ $t('projectList.createProject') }}</el-button>
         </div>
       </template>
 
       <el-table :data="projects" v-loading="loading" style="width: 100%">
-        <el-table-column prop="id" label="ID" width="80"></el-table-column>
-        <el-table-column label="Name" width="200">
+        <el-table-column prop="id" :label="$t('projectList.id')" width="80"></el-table-column>
+        <el-table-column :label="$t('projectList.name')" width="200">
           <template #default="scope">
             <span @click="goToProjectDetails(scope.row.id)" style="cursor: pointer; color: #409EFF;">{{ scope.row.name }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="Description"></el-table-column>
-        <el-table-column prop="owner_id" label="Owner ID" width="120"></el-table-column>
-        <el-table-column label="Created At" width="180">
+        <el-table-column prop="description" :label="$t('projectList.description')"></el-table-column>
+        <el-table-column prop="owner_id" :label="$t('projectList.ownerId')" width="120"></el-table-column>
+        <el-table-column :label="$t('projectList.createdAt')" width="180">
           <template #default="scope">
             {{ formatDate(scope.row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="Updated At" width="180">
+        <el-table-column :label="$t('projectList.updatedAt')" width="180">
           <template #default="scope">
             {{ formatDate(scope.row.updated_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="Actions" width="300">
+        <el-table-column :label="$t('projectList.actions')" width="300">
           <template #default="scope">
-            <el-button size="small" @click="handleEditProject(scope.row)">编辑</el-button>
-            <el-button size="small" type="danger" @click="handleDeleteProject(scope.row.id)">删除</el-button>
+            <el-button size="small" @click="handleEditProject(scope.row)">{{ $t('projectList.edit') }}</el-button>
+            <el-button size="small" type="danger" @click="handleDeleteProject(scope.row.id)">{{ $t('projectList.delete') }}</el-button>
             <el-button size="small" type="info" @click="goToProjectDetails(scope.row.id)" style="margin-left: 5px;">
-              查看详情
+              {{ $t('projectList.viewDetails') }}
             </el-button>
           </template>
         </el-table-column>
@@ -44,37 +44,37 @@
     </el-card>
 
     <!-- Project Creation Form -->
-    <el-dialog v-model="showCreateProjectForm" title="Create New Project" width="500px">
+    <el-dialog v-model="showCreateProjectForm" :title="$t('projectList.createNewProject')" width="500px">
       <el-form :model="newProjectForm" :rules="newProjectRules" ref="newProjectFormRef" label-width="120px">
-        <el-form-item label="Project Name" prop="name">
+        <el-form-item :label="$t('projectList.projectName')" prop="name">
           <el-input v-model="newProjectForm.name"></el-input>
         </el-form-item>
-        <el-form-item label="Description">
+        <el-form-item :label="$t('projectList.description')">
           <el-input type="textarea" v-model="newProjectForm.description"></el-input>
         </el-form-item>
       </el-form>
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="showCreateProjectForm = false">Cancel</el-button>
-          <el-button type="primary" @click="handleCreateProject">Create</el-button>
+          <el-button @click="showCreateProjectForm = false">{{ $t('projectList.cancel') }}</el-button>
+          <el-button type="primary" @click="handleCreateProject">{{ $t('projectList.create') }}</el-button>
         </span>
       </template>
     </el-dialog>
 
     <!-- Project Edit Form -->
-    <el-dialog v-model="showEditProjectForm" title="Edit Project" width="500px">
+    <el-dialog v-model="showEditProjectForm" :title="$t('projectList.editProject')" width="500px">
       <el-form :model="editProjectForm" :rules="newProjectRules" ref="editProjectFormRef" label-width="120px">
-        <el-form-item label="Project Name" prop="name">
+        <el-form-item :label="$t('projectList.projectName')" prop="name">
           <el-input v-model="editProjectForm.name"></el-input>
         </el-form-item>
-        <el-form-item label="Description">
+        <el-form-item :label="$t('projectList.description')">
           <el-input type="textarea" v-model="editProjectForm.description"></el-input>
         </el-form-item>
       </el-form>
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="showEditProjectForm = false">Cancel</el-button>
-          <el-button type="primary" @click="handleUpdateProject">Save</el-button>
+          <el-button @click="showEditProjectForm = false">{{ $t('projectList.cancel') }}</el-button>
+          <el-button type="primary" @click="handleUpdateProject">{{ $t('projectList.save') }}</el-button>
         </span>
       </template>
     </el-dialog>
@@ -83,9 +83,12 @@
 
 <script setup>
 import { ref, onMounted, reactive } from 'vue';
-import { useRouter } from 'vue-router'; // Import useRouter
+import { useRouter } from 'vue-router';
 import { projectAPI } from '@/api';
 import { ElMessage, ElMessageBox, ElForm, ElFormItem, ElInput, ElButton, ElCard, ElTable, ElTableColumn, ElAlert, ElDialog } from 'element-plus';
+import { useI18n } from 'vue-i18n'; // Import useI18n
+
+const { t } = useI18n(); // Initialize useI18n at the top
 
 const projects = ref([]);
 const loading = ref(true);
@@ -107,7 +110,7 @@ const editProjectForm = reactive({
 });
 
 const newProjectRules = {
-  name: [{ required: true, message: 'Please enter project name', trigger: 'blur' }],
+  name: [{ required: true, message: t('projectList.projectNameRequired'), trigger: 'blur' }],
 };
 
 const handleCreateProject = async () => {
@@ -116,17 +119,17 @@ const handleCreateProject = async () => {
     if (valid) {
       try {
         await projectAPI.createProject(newProjectForm);
-        ElMessage.success('Project created successfully!');
+        ElMessage.success(t('projectList.projectCreatedSuccess'));
         showCreateProjectForm.value = false;
         newProjectForm.name = '';
         newProjectForm.description = '';
         fetchProjects();
       } catch (err) {
         console.error('Failed to create project:', err);
-        ElMessage.error('Failed to create project: ' + (err.response?.data?.detail || err.message));
+        ElMessage.error(t('projectList.failedToCreateProject') + (err.response?.data?.detail || err.message));
       }
     } else {
-      ElMessage.error('Please fill in all required fields.');
+      ElMessage.error(t('projectList.fillRequiredFields'));
       return false;
     }
   });
@@ -148,15 +151,15 @@ const handleUpdateProject = async () => {
           name: editProjectForm.name,
           description: editProjectForm.description
         });
-        ElMessage.success('Project updated successfully!');
+        ElMessage.success(t('projectList.projectUpdatedSuccess'));
         showEditProjectForm.value = false;
         fetchProjects();
       } catch (err) {
         console.error('Failed to update project:', err);
-        ElMessage.error('Failed to update project: ' + (err.response?.data?.detail || err.message));
+        ElMessage.error(t('projectList.failedToUpdateProject') + (err.response?.data?.detail || err.message));
       }
     } else {
-      ElMessage.error('Please fill in all required fields.');
+      ElMessage.error(t('projectList.fillRequiredFields'));
       return false;
     }
   });
@@ -164,26 +167,26 @@ const handleUpdateProject = async () => {
 
 const handleDeleteProject = async (projectId) => {
   ElMessageBox.confirm(
-    'This will permanently delete the project. Continue?',
-    'Warning',
+    t('projectList.deleteConfirm'),
+    t('projectList.warning'),
     {
-      confirmButtonText: 'OK',
-      cancelButtonText: 'Cancel',
+      confirmButtonText: t('projectList.ok'),
+      cancelButtonText: t('projectList.cancel'),
       type: 'warning',
     }
   )
     .then(async () => {
       try {
         await projectAPI.deleteProject(projectId);
-        ElMessage.success('Project deleted successfully!');
+        ElMessage.success(t('projectList.projectDeletedSuccess'));
         fetchProjects();
       } catch (err) {
         console.error('Failed to delete project:', err);
-        ElMessage.error('Failed to delete project: ' + (err.response?.data?.detail || err.message));
+        ElMessage.error(t('projectList.failedToDeleteProject') + (err.response?.data?.detail || err.message));
       }
     })
     .catch(() => {
-      ElMessage.info('Delete cancelled');
+      ElMessage.info(t('projectList.deleteCancelled'));
     });
 };
 
@@ -203,19 +206,19 @@ const fetchProjects = async () => {
   } catch (err) {
     console.error('Failed to fetch projects:', err);
     if (err.response?.status === 401) {
-      error.value = 'Session expired. Please log in again.';
+      error.value = t('projectList.sessionExpired');
       // Clear token and redirect to login
       localStorage.removeItem('authToken');
       router.push({ name: 'Login' });
     } else {
-      error.value = 'Failed to load projects. Please try again later.';
+      error.value = t('projectList.failedToLoadProjects');
     }
   } finally {
     loading.value = false;
   }
 };
 
-const router = useRouter(); // Initialize router
+const router = useRouter();
 
 const setActiveProject = (projectId) => {
   localStorage.setItem('activeProjectId', projectId);

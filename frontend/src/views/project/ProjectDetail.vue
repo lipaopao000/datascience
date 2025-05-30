@@ -3,26 +3,26 @@
     <el-card v-if="project" v-loading="loading">
       <template #header>
         <div class="card-header">
-          <h2>Project: {{ project.name }}</h2>
-          <el-button type="primary" @click="goBack">Back to Projects</el-button>
+          <h2>{{ $t('projectDetail.project') }}: {{ project.name }}</h2>
+          <el-button type="primary" @click="goBack">{{ $t('projectDetail.backToProjects') }}</el-button>
         </div>
       </template>
 
       <el-tabs v-model="activeTab" class="project-tabs" @tab-click="handleTabClick">
-        <el-tab-pane label="Overview" name="overview">
+        <el-tab-pane :label="$t('projectDetail.overview')" name="overview">
           <div class="project-overview">
-            <p><strong>Description:</strong> {{ project.description || 'N/A' }}</p>
-            <p><strong>Owner ID:</strong> {{ project.owner_id }}</p>
-            <p><strong>Created At:</strong> {{ formatDate(project.created_at) }}</p>
-            <p><strong>Last Updated:</strong> {{ formatDate(project.updated_at) }}</p>
+            <p><strong>{{ $t('projectDetail.description') }}:</strong> {{ project.description || 'N/A' }}</p>
+            <p><strong>{{ $t('projectDetail.ownerId') }}:</strong> {{ project.owner_id }}</p>
+            <p><strong>{{ $t('projectDetail.createdAt') }}:</strong> {{ formatDate(project.created_at) }}</p>
+            <p><strong>{{ $t('projectDetail.lastUpdated') }}:</strong> {{ formatDate(project.updated_at) }}</p>
             <!-- Add more statistical information here if available -->
-            <h3>Project Statistics</h3>
+            <h3>{{ $t('projectDetail.projectStatistics') }}</h3>
             <ProjectStatisticsAnalysis :projectId="Number(project.id)" />
           </div>
         </el-tab-pane>
-        <el-tab-pane label="Data" name="data"></el-tab-pane>
-        <el-tab-pane label="Experiments" name="experiments"></el-tab-pane>
-        <el-tab-pane label="Models" name="models"></el-tab-pane>
+        <el-tab-pane :label="$t('projectDetail.data')" name="data"></el-tab-pane>
+        <el-tab-pane :label="$t('projectDetail.experiments')" name="experiments"></el-tab-pane>
+        <el-tab-pane :label="$t('projectDetail.models')" name="models"></el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -30,7 +30,7 @@
       <el-alert type="error" :title="error" show-icon :closable="false"></el-alert>
     </div>
     <div v-else-if="!loading" class="no-project-found">
-      <el-empty description="Project not found"></el-empty>
+      <el-empty :description="$t('projectDetail.projectNotFound')"></el-empty>
     </div>
   </div>
 </template>
@@ -41,10 +41,11 @@ import { useRoute, useRouter } from 'vue-router';
 import { projectAPI, experimentAPI, modelRegistryAPI } from '@/api';
 import { ElMessage, ElCard, ElButton, ElTabs, ElTabPane, ElAlert, ElEmpty } from 'element-plus';
 import ProjectStatisticsAnalysis from '@/views/analysis/StatisticsAnalysis.vue';
-// Removed ProjectDataTab, ProjectExperimentsTab, ProjectModelsTab as they are no longer directly rendered
+import { useI18n } from 'vue-i18n'; // Import useI18n
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n(); // Initialize useI18n
 
 const project = ref(null);
 const loading = ref(true);

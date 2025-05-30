@@ -3,19 +3,19 @@
     <el-card class="login-card">
       <template #header>
         <div class="card-header">
-          <span>Login</span>
+          <span>{{ $t('login.login') }}</span>
         </div>
       </template>
       <el-form @submit.prevent="handleLogin" :model="loginForm" :rules="rules" ref="loginFormRef">
         <el-form-item prop="username">
-          <el-input v-model="loginForm.username" placeholder="Username" prefix-icon="User"></el-input>
+          <el-input v-model="loginForm.username" :placeholder="$t('login.username')" prefix-icon="User"></el-input>
         </el-form-item>
         <el-form-item prop="password">
-          <el-input v-model="loginForm.password" type="password" placeholder="Password" prefix-icon="Lock" show-password></el-input>
+          <el-input v-model="loginForm.password" type="password" :placeholder="$t('login.password')" prefix-icon="Lock" show-password></el-input>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleLogin" :loading="loading" class="login-button">Login</el-button>
-          <el-button @click="goToRegister" class="register-button">Register</el-button>
+          <el-button type="primary" @click="handleLogin" :loading="loading" class="login-button">{{ $t('login.login') }}</el-button>
+          <el-button @click="goToRegister" class="register-button">{{ $t('login.register') }}</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -26,7 +26,8 @@
 import { ref, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { authAPI } from '@/api'; // Assuming your api/index.js is aliased as @/api
+import { authAPI } from '@/api';
+import { useI18n } from 'vue-i18n'; // Import useI18n
 
 const loginForm = reactive({
   username: '',
@@ -36,10 +37,11 @@ const loginForm = reactive({
 const loginFormRef = ref(null);
 const loading = ref(false);
 const router = useRouter();
+const { t } = useI18n(); // Initialize useI18n
 
 const rules = {
-  username: [{ required: true, message: 'Please input username', trigger: 'blur' }],
-  password: [{ required: true, message: 'Please input password', trigger: 'blur' }],
+  username: [{ required: true, message: t('login.usernameRequired'), trigger: 'blur' }],
+  password: [{ required: true, message: t('login.passwordRequired'), trigger: 'blur' }],
 };
 
 const goToRegister = () => {
@@ -53,7 +55,7 @@ const handleLogin = async () => {
       loading.value = true;
       try {
         await authAPI.loginUser(loginForm.username, loginForm.password);
-        ElMessage.success('Login successful!');
+        ElMessage.success(t('login.loginSuccessful'));
         router.push('/projects'); // Or '/dashboard'
       } catch (error) {
         // Error message is handled by the API interceptor, but you can add specific logic here if needed
@@ -62,7 +64,7 @@ const handleLogin = async () => {
         loading.value = false;
       }
     } else {
-      ElMessage.error('Please fill in all fields correctly.');
+      ElMessage.error(t('login.fillAllFields'));
       return false;
     }
   });
