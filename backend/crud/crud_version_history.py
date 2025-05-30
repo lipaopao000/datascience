@@ -1,8 +1,12 @@
+import logging
 from sqlalchemy.orm import Session
 from typing import Optional, List, Any, Dict
 
 from backend.models import database_models as models
 from backend.models import schemas
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 def get_version_history_entry(db: Session, version_id: int) -> Optional[models.VersionHistory]:
     return db.query(models.VersionHistory).filter(models.VersionHistory.id == version_id).first()
@@ -30,6 +34,34 @@ def get_versions_for_entity(
         .limit(limit)
         .all()
     )
+
+def update_version_notes(db: Session, version_id: int, notes: Optional[str]) -> Optional[models.VersionHistory]:
+    """
+    Update the notes for a specific version history entry.
+    """
+    db_version = db.query(models.VersionHistory).filter(models.VersionHistory.id == version_id).first()
+    if db_version:
+        db_version.notes = notes
+        db.commit()
+        db.refresh(db_version)
+    return db_version
+
+def update_version_display_name(db: Session, version_id: int, display_name: Optional[str]) -> Optional[models.VersionHistory]:
+    """
+    Update the display name for a specific version history entry.
+    """
+    db_version = db.query(models.VersionHistory).filter(models.VersionHistory.id == version_id).first()
+    if db_version:
+        db_version.display_name = display_name
+        db.commit()
+        db.refresh(db_version)
+    return db_version
+
+def get_versions_count_by_project_id(db: Session, project_id: int) -> int:
+    """
+    Get the total count of versions for a specific project.
+    """
+    return db.query(models.VersionHistory).filter(models.VersionHistory.project_id == project_id).count()
 
 def get_latest_version_for_entity(
     db: Session, 
@@ -81,6 +113,7 @@ def create_version_history(
         version_metadata=version_create_data.version_metadata,
         file_identifier=version_create_data.file_identifier,
         notes=version_create_data.notes,
+        display_name=version_create_data.display_name, # Added display_name
         # user_id=user_id 
     )
     db.add(db_version)
@@ -130,3 +163,7 @@ def get_versions_by_project_id(db: Session, project_id: int, skip: int = 0, limi
         .limit(limit)
         .all()
     )
+
+def get_versions_for_project(db: Session, project_id: int, skip: int = 0, limit: int = 100) -> List[models.VersionHistory]:
+    """Alias for get_versions_by_project_id for API consistency"""
+    return get_versions_by_project_id(db, project_id, skip, limit)

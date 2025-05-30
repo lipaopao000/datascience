@@ -6,7 +6,7 @@ from backend.models import database_models as models
 from backend.models import schemas
 from backend.crud import crud_system_setting
 from backend.core import security
-from backend.models.database_models import get_db
+from backend.dependencies import get_db # Import get_db from dependencies
 
 router = APIRouter(
     prefix="/api/v1/system-settings",

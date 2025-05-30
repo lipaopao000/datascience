@@ -1,4 +1,4 @@
-from datetime import timedelta # Added import
+from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -8,10 +8,11 @@ from backend.models import database_models as models
 from backend.models import schemas
 from backend.crud import crud_user
 from backend.core import security
-from backend.models.database_models import get_db
+from backend.dependencies import get_db
+from backend.core.security import REFRESH_TOKEN_EXPIRE_MINUTES # Import REFRESH_TOKEN_EXPIRE_MINUTES
 
 router = APIRouter(
-    prefix="/users", # Changed prefix to be relative to API_V1_STR
+    prefix="/users",
     tags=["users"],
 )
 
@@ -45,13 +46,69 @@ async def login_for_access_token(
     access_token = security.create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
-    response_data = {"access_token": access_token, "token_type": "bearer"}
+
+    refresh_token_expires = timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)
+    refresh_token = security.create_refresh_token(
+        data={"sub": user.username}, expires_delta=refresh_token_expires
+    )
+
+    response_data = {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "refresh_token": refresh_token # Include refresh token
+    }
     
-    # Manually add CORS header for debugging
     from fastapi.responses import JSONResponse
     response = JSONResponse(content=response_data)
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Credentials"] = "true" # Needed if allow_origins is not "*"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
+
+@router.post("/refresh_token", response_model=schemas.Token)
+async def refresh_access_token(
+    refresh_token_data: schemas.RefreshTokenRequest, # Expects a Pydantic model with refresh_token field
+    db: Session = Depends(get_db)
+):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    payload = security.verify_refresh_token(refresh_token_data.refresh_token)
+    username: str = payload.get("sub")
+    if username is None:
+        raise credentials_exception
+    
+    user = crud_user.get_user_by_username(db, username=username)
+    if user is None:
+        raise credentials_exception
+    
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+
+    access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
+    new_access_token = security.create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+
+    refresh_token_expires = timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)
+    new_refresh_token = security.create_refresh_token(
+        data={"sub": user.username}, expires_delta=refresh_token_expires
+    )
+
+    response_data = {
+        "access_token": new_access_token,
+        "token_type": "bearer",
+        "refresh_token": new_refresh_token
+    }
+    
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content=response_data)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
     response.headers["Access-Control-Allow-Methods"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "*"
     return response

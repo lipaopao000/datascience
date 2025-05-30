@@ -19,17 +19,6 @@ Base = declarative_base()
 # Global variable to hold the test session local, if set by conftest
 _test_session_local = None
 
-# Dependency to get DB session
-def get_db():
-    if _test_session_local: # If running in test environment
-        db = _test_session_local()
-    else: # Production/development environment
-        db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -67,6 +56,7 @@ class VersionHistory(Base):
     notes = Column(Text, nullable=True)
     version_metadata = Column(JSON, nullable=True) # Stores parameters, config, small data. Can be null if only file.
     file_identifier = Column(String, nullable=True) # e.g., "dataset_v1.csv", "model_v3.pkl"
+    display_name = Column(String, nullable=True) # User-editable name for the versioned entity
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     # user_id = Column(Integer, ForeignKey("users.id")) # Optional: who made the version
 
@@ -203,44 +193,6 @@ class ModelVersion(Base):
 
 
 def create_db_and_tables():
+    # This function is typically used for initial setup or testing, not for production schema management.
+    # In a production environment, Alembic migrations should be used to manage the database schema.
     Base.metadata.create_all(bind=engine)
-
-if __name__ == "__main__":
-    # This allows creating tables by running this script directly
-    # In a real app, you might use Alembic for migrations
-    print("Creating database and tables...")
-    create_db_and_tables()
-    print("Database and tables created (if they didn't exist).")
-    
-    # Update default settings creation to use config, similar to main.py
-    # This block is for when running this script directly.
-    # The logic in main.py's startup event is preferred for application startup.
-    db = SessionLocal()
-    try:
-        default_data_path_key = "data_save_path"
-        default_project_data_path = os.path.join(settings.STORAGE_BASE_PATH, "project_data")
-        os.makedirs(default_project_data_path, exist_ok=True)
-        
-        default_setting_value = {"path": default_project_data_path}
-        default_setting_desc = "Default path for storing project-related data files (set by database_models.py)."
-
-        existing_setting = db.query(SystemSetting).filter(SystemSetting.key == default_data_path_key).first()
-        if not existing_setting:
-            # We need the Pydantic model for creation if crud functions expect it,
-            # or construct the SQLAlchemy model directly.
-            # For simplicity here, constructing SQLAlchemy model directly.
-            new_setting = SystemSetting(
-                key=default_data_path_key,
-                value=default_setting_value,
-                description=default_setting_desc
-            )
-            db.add(new_setting)
-            db.commit()
-            print(f"Added default setting via database_models.py: {new_setting.key}")
-        else:
-            print(f"Default setting '{default_data_path_key}' already exists (checked by database_models.py).")
-            
-    except Exception as e:
-        print(f"Error adding default setting via database_models.py: {e}")
-    finally:
-        db.close()

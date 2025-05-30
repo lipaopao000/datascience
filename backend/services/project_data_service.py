@@ -17,8 +17,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer # Added for TF-IDF
 logger = logging.getLogger(__name__)
 
 class ProjectDataService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, schema_service_instance=None):
         self.db = db
+        self.schema_service = schema_service_instance
 
     def load_data_from_version(
         self, 
@@ -125,8 +126,10 @@ class ProjectDataService:
             logger.error(f"Failed to save uploaded file to {versioned_file_path}: {e}", exc_info=True)
             return None
 
-        # 4. Optionally, read the file to extract metadata (e.g., columns, shape)
+        # 4. Read the file to extract metadata (rows, columns, etc.)
         file_metadata = {}
+        rows = None
+        columns = None
         try:
             if stored_filename.endswith(".csv"):
                 df = pd.read_csv(versioned_file_path)
@@ -134,7 +137,14 @@ class ProjectDataService:
                 file_metadata["shape"] = list(df.shape)
                 file_metadata["records"] = len(df)
                 file_metadata["content_type"] = "text/csv"
+                rows, columns = df.shape
             elif stored_filename.endswith(".pkl"):
+                df = pd.read_pickle(versioned_file_path)
+                if isinstance(df, pd.DataFrame):
+                    file_metadata["columns"] = df.columns.tolist()
+                    file_metadata["shape"] = list(df.shape)
+                    file_metadata["records"] = len(df)
+                    rows, columns = df.shape
                 file_metadata["content_type"] = "application/octet-stream"
         except Exception as e:
             logger.warning(f"Could not extract metadata from {stored_filename}: {e}")
@@ -148,12 +158,17 @@ class ProjectDataService:
             **file_metadata
         }
         
+        # Create version payload with all fields
         version_create_payload = schemas.VersionHistoryCreate(
             entity_type="data",
             entity_id=data_entity_id,
             notes=notes,
             version_metadata=version_metadata,
-            file_identifier=stored_filename
+            file_identifier=stored_filename,
+            display_name=original_filename,  # Set display name
+            rows=rows,  # Set rows
+            columns=columns,  # Set columns
+            size_bytes=os.path.getsize(versioned_file_path)  # Set size
         )
         
         new_db_entry = crud_version_history.create_version_history(
@@ -352,14 +367,17 @@ class ProjectDataService:
             entity_id=data_entity_id, # Same entity, new version
             notes=notes,
             version_metadata=version_metadata,
-            file_identifier=original_filename 
+            file_identifier=original_filename,
+            rows=len(cleaned_df), # Set rows
+            columns=len(cleaned_df.columns), # Set columns
+            size_bytes=cleaned_file_path.stat().st_size, # Set size
+            display_name=source_version_entry.display_name if source_version_entry else original_filename # Set display name
         )
         
         new_db_entry = crud_version_history.create_version_history(
             self.db, project_id, version_create_payload
         )
         
-        # Convert SQLAlchemy model to Pydantic response model
         return VersionHistoryResponse.model_validate(new_db_entry, from_attributes=True)
 
     def rollback_to_version(
@@ -426,19 +444,372 @@ class ProjectDataService:
              new_version_metadata["size_bytes"] = new_version_file_path.stat().st_size
 
 
+        # Load the DataFrame to get rows and columns for the new entry
+        rolled_back_df = self.load_data_from_version(
+            project_id=project_id,
+            entity_id=data_entity_id,
+            version_number=source_version_number
+        )
+        
+        rows = len(rolled_back_df) if rolled_back_df is not None else None
+        columns = len(rolled_back_df.columns) if rolled_back_df is not None else None
+        size_bytes = new_version_file_path.stat().st_size if os.path.exists(new_version_file_path) else None
+
         version_create_payload = schemas.VersionHistoryCreate(
             entity_type="data",
             entity_id=data_entity_id,
             notes=rollback_notes,
             version_metadata=new_version_metadata,
-            file_identifier=source_version_entry.file_identifier # Same file name
+            file_identifier=source_version_entry.file_identifier, # Same file name
+            display_name=source_version_entry.display_name if source_version_entry else source_version_entry.file_identifier, # Set display name
+            rows=rows, # Set rows
+            columns=columns, # Set columns
+            size_bytes=size_bytes # Set size
         )
         
         new_db_entry = crud_version_history.create_version_history(
             self.db, project_id, version_create_payload
         )
         
-        return VersionHistoryResponse.model_validate(new_db_entry)
+        return VersionHistoryResponse.model_validate(new_db_entry, from_attributes=True)
+
+    def format_and_version_data(
+        self,
+        project_id: int,
+        data_ids: List[str], # Now accepts a list of data_ids
+        convert_to_headered: bool,
+        schema_id: Optional[str],
+        data_specific_value_columns: Optional[List[schemas.DataValueColumnMapping]] = None, # New parameter
+        notes: Optional[str] = "Formatted data"
+    ) -> tuple[List[VersionHistoryResponse], List[str]]: # Now returns a tuple of (formatted_versions, errors)
+        """
+        Loads specified data entities, applies formatting, and saves them as new versions.
+        Returns a tuple: (list of successfully formatted versions, list of error messages for failed entities).
+        """
+        formatted_versions = []
+        errors = []
+        
+        # Create a mapping for data_id to its specific value_column_name
+        value_column_map = {
+            mapping.data_id: mapping.value_column_name
+            for mapping in (data_specific_value_columns or [])
+        }
+
+        for data_entity_id in data_ids:
+            try:
+                logger.info(f"Attempting to format data entity: {data_entity_id}")
+                # 1. Load the latest version of the source data entity
+                latest_version_entry = crud_version_history.get_latest_version_for_entity(
+                    self.db, project_id, "data", data_entity_id
+                )
+                if not latest_version_entry:
+                    error_msg = f"Latest version for entity {data_entity_id} not found. Skipping formatting."
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+                    continue
+                
+                source_version_number = latest_version_entry.version
+                source_df = self.load_data_from_version(
+                    project_id=project_id,
+                    entity_id=data_entity_id,
+                    version_number=source_version_number
+                )
+                if source_df is None:
+                    error_msg = f"Source data for entity {data_entity_id}, version {source_version_number} not found. Skipping formatting."
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+                    continue
+
+                formatted_df = source_df.copy()
+                schema_applied_name = None
+                current_value_column_name = value_column_map.get(data_entity_id, "value") # Get specific or default
+                logger.debug(f"Initial formatted_df shape: {formatted_df.shape}")
+
+                # 2. Apply schema if convert_to_headered is true and schema_id is provided
+                if convert_to_headered and schema_id:
+                    if not self.schema_service:
+                        error_msg = "SchemaService is not initialized in ProjectDataService. Cannot apply schema."
+                        logger.error(error_msg)
+                        errors.append(error_msg)
+                        raise ValueError(error_msg) # Re-raise for immediate failure if service not initialized
+                    
+                    schema = self.schema_service.get_schema(project_id, schema_id)
+                    if not schema:
+                        error_msg = f"Schema with ID {schema_id} not found for entity {data_entity_id}. Skipping formatting."
+                        logger.error(error_msg)
+                        errors.append(error_msg)
+                        continue
+                    
+                    schema_applied_name = schema.name
+                    logger.info(f"Applying schema '{schema.name}' (type: {schema.schema_type}) to entity {data_entity_id}.")
+
+                    if schema.schema_type == "high_frequency_wide":
+                        time_col_idx = schema.time_column_index
+                        data_start_idx = schema.data_start_column_index
+                        num_data_cols = schema.num_data_columns
+                        sampling_rate = schema.sampling_rate_hz
+
+                        if time_col_idx is None or data_start_idx is None or num_data_cols is None or sampling_rate is None:
+                            error_msg = f"High-frequency wide schema {schema.name} is incomplete for entity {data_entity_id}. Skipping."
+                            logger.error(error_msg)
+                            errors.append(error_msg)
+                            continue
+
+                        if source_df.shape[1] < data_start_idx + num_data_cols:
+                            error_msg = f"Original data for {data_entity_id} has fewer columns ({source_df.shape[1]}) than expected by high-frequency wide schema {schema.name} (expected at least {data_start_idx + num_data_cols}). Skipping."
+                            logger.error(error_msg)
+                            errors.append(error_msg)
+                            continue
+
+                        time_data = source_df.iloc[:, time_col_idx]
+                        data_cols = source_df.iloc[:, data_start_idx : data_start_idx + num_data_cols]
+                        logger.debug(f"Time data shape: {time_data.shape}, Data columns shape: {data_cols.shape}")
+
+                        long_format_records = []
+                        for i, row_time in enumerate(time_data):
+                            try:
+                                base_timestamp = pd.to_datetime(row_time, unit='s', errors='coerce')
+                                if pd.isna(base_timestamp):
+                                    base_timestamp = pd.to_datetime(row_time, errors='coerce')
+                                if pd.isna(base_timestamp):
+                                    logger.warning(f"Could not parse time value {row_time} at row {i} in data {data_entity_id}, skipping row. Attempting next row.")
+                                    continue
+                            except Exception as e_time:
+                                logger.warning(f"Error parsing time value {row_time} at row {i} in data {data_entity_id}, skipping row. Error: {e_time}")
+                                continue
+
+                            for j in range(num_data_cols):
+                                value = data_cols.iloc[i, j]
+                                sample_timestamp_ms = base_timestamp + pd.to_timedelta(j * (1000.0 / sampling_rate), unit='ms')
+                                long_format_records.append({
+                                    'timestamp': sample_timestamp_ms,
+                                    current_value_column_name: value # Use the specific value column name
+                                })
+                        
+                        if not long_format_records:
+                            error_msg = f"No data could be transformed for {data_entity_id} using schema {schema.name}. Resulting DataFrame will be empty."
+                            logger.warning(error_msg)
+                            errors.append(error_msg)
+                            formatted_df = pd.DataFrame(columns=['timestamp', current_value_column_name])
+                        else:
+                            formatted_df = pd.DataFrame(long_format_records)
+                            formatted_df['timestamp'] = pd.to_datetime(formatted_df['timestamp'])
+                        
+                        # Clean column names after transformation
+                        formatted_df.columns = ["_".join(col.split()) for col in formatted_df.columns]
+                        notes_for_version = f"{notes} (Applied high-frequency wide schema: {schema.name})"
+                        logger.debug(f"Formatted_df shape after high-frequency wide transformation: {formatted_df.shape}")
+
+                    elif schema.schema_type == "standard":
+                        col_names = [col.name for col in schema.columns]
+                        if len(col_names) == formatted_df.shape[1]:
+                            formatted_df.columns = col_names
+                            logger.info(f"Applied standard schema column names for entity {data_entity_id}.")
+                        else:
+                            error_msg = f"Schema column count mismatch for {data_entity_id}, cannot apply standard schema names. Expected {len(col_names)}, got {formatted_df.shape[1]}."
+                            logger.warning(error_msg)
+                            errors.append(error_msg)
+                        formatted_df.columns = ["_".join(col.split()) for col in formatted_df.columns]
+                        notes_for_version = f"{notes} (Applied standard schema: {schema.name})"
+                        logger.debug(f"Formatted_df shape after standard schema transformation: {formatted_df.shape}")
+                    else:
+                        error_msg = f"Unsupported schema type '{schema.schema_type}' for formatting entity {data_entity_id}. Skipping schema application."
+                        logger.warning(error_msg)
+                        errors.append(error_msg)
+                        notes_for_version = notes # No schema applied note
+                else:
+                    notes_for_version = notes # No schema applied note
+                
+                # Save the formatted data as a new version
+                new_file_identifier = f"{Path(latest_version_entry.file_identifier).stem}_formatted_v{latest_version_entry.version + 1}.pkl"
+                
+                version_entry = self.save_dataframe_as_version(
+                    project_id=project_id,
+                    data_entity_id=data_entity_id,
+                    df=formatted_df,
+                    file_identifier=new_file_identifier,
+                    notes=notes_for_version,
+                    version_metadata={"formatted_from_version": source_version_number, "schema_id": schema_id}
+                )
+                if version_entry:
+                    formatted_versions.append(version_entry)
+                    logger.info(f"Successfully formatted and versioned data for entity {data_entity_id}.")
+                else:
+                    error_msg = f"Failed to save formatted data for entity {data_entity_id} to a new version."
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+            except Exception as e:
+                error_msg = f"An unexpected error occurred during formatting for entity {data_entity_id}: {e}"
+                logger.error(error_msg, exc_info=True)
+                errors.append(error_msg)
+                continue # Continue to the next data_id in the list
+        
+        return formatted_versions, errors
+
+    def save_dataframe_as_version(
+        self,
+        project_id: int,
+        data_entity_id: str,
+        df: pd.DataFrame,
+        file_identifier: str,
+        notes: Optional[str] = None,
+        version_metadata: Optional[Dict[str, Any]] = None
+    ) -> Optional[VersionHistoryResponse]:
+        """
+        Saves a pandas DataFrame as a new version for a given data entity.
+        """
+        latest_version_entry = crud_version_history.get_latest_version_for_entity(
+            self.db, project_id, "data", data_entity_id
+        )
+        new_version_number = (latest_version_entry.version + 1) if latest_version_entry else 1
+
+        versioned_file_path = get_versioned_data_path(
+            self.db, project_id, "data", data_entity_id, new_version_number, file_identifier
+        )
+        os.makedirs(os.path.dirname(versioned_file_path), exist_ok=True)
+
+        try:
+            # Save DataFrame as PKL
+            pd.to_pickle(df, versioned_file_path)
+            logger.info(f"Saved DataFrame to {versioned_file_path}")
+        except Exception as e:
+            logger.error(f"Failed to save DataFrame to {versioned_file_path}: {e}", exc_info=True)
+            return None
+
+        # Create VersionHistory entry
+        final_metadata = {
+            "original_filename": file_identifier, # This is the name of the file saved
+            "stored_filename": file_identifier,
+            "size_bytes": os.path.getsize(versioned_file_path),
+            "columns": df.columns.tolist(),
+            "shape": list(df.shape),
+            "records": len(df),
+            "content_type": "application/octet-stream", # For PKL
+            **(version_metadata or {})
+        }
+        
+        version_create_payload = schemas.VersionHistoryCreate(
+            entity_type="data",
+            entity_id=data_entity_id,
+            notes=notes,
+            version_metadata=final_metadata,
+            file_identifier=file_identifier,
+            rows=len(df), # Set rows
+            columns=len(df.columns), # Set columns
+            size_bytes=os.path.getsize(versioned_file_path), # Set size
+            display_name=latest_version_entry.display_name if latest_version_entry else file_identifier # Set display name
+        )
+        
+        new_db_entry = crud_version_history.create_version_history(
+            self.db, project_id, version_create_payload
+        )
+        
+        if not new_db_entry:
+            try:
+                os.remove(versioned_file_path)
+            except OSError:
+                pass
+            logger.error(f"Failed to create version history entry for {file_identifier}. File deleted.")
+            return None
+
+        return schemas.VersionHistoryResponse.model_validate(new_db_entry, from_attributes=True)
+
+    def delete_specific_data_version(
+        self,
+        project_id: int,
+        entity_id: str,
+        version_number: int
+    ) -> bool:
+        """Deletes a specific data version entry and its associated file."""
+        version_entry = crud_version_history.get_specific_version(
+            self.db, project_id, "data", entity_id, version_number
+        )
+        if not version_entry:
+            logger.warning(f"Version {version_number} of entity {entity_id} not found for deletion.")
+            return False
+
+        file_path = get_versioned_data_path(
+            self.db, project_id, "data", entity_id, version_number, version_entry.file_identifier
+        )
+
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logger.info(f"Deleted file: {file_path}")
+            else:
+                logger.warning(f"File not found for deletion at {file_path}, but proceeding to delete DB entry.")
+            
+            # Delete the version history entry from the database
+            self.db.delete(version_entry)
+            self.db.commit()
+            logger.info(f"Deleted version {version_number} of entity {entity_id} from DB.")
+            return True
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Failed to delete version {version_number} of entity {entity_id}: {e}", exc_info=True)
+            return False
+
+    def delete_data_entity_and_all_versions(
+        self,
+        project_id: int,
+        entity_id: str
+    ) -> bool:
+        """Deletes an entire data entity (all its versions) and its directory from storage."""
+        # Get all versions for the entity
+        versions_to_delete = crud_version_history.get_versions_for_entity(
+            self.db, project_id, "data", entity_id
+        )
+        
+        if not versions_to_delete:
+            logger.warning(f"No versions found for data entity {entity_id} to delete.")
+            return False
+
+        # Construct the base directory for the entity
+        # This assumes a structure like STORAGE_BASE_PATH/project_id/data/entity_id/
+        # Need to get STORAGE_BASE_PATH from settings
+        system_setting = crud_system_setting.get_setting(self.db, key="data_save_path")
+        if not system_setting or not system_setting.value or "path" not in system_setting.value:
+            logger.error("Data save path not configured in system settings.")
+            return False
+        
+        storage_base_path = system_setting.value["path"]
+        # Corrected path construction: add "project_" prefix to project_id
+        entity_dir = os.path.join(storage_base_path, f"project_{project_id}", "data", entity_id)
+
+        try:
+            if os.path.exists(entity_dir):
+                shutil.rmtree(entity_dir)
+                logger.info(f"Deleted entity directory: {entity_dir}")
+            else:
+                logger.warning(f"Entity directory not found at {entity_dir}, but proceeding to delete DB entries.")
+            
+            # Delete all associated version history entries from the database
+            for version_entry in versions_to_delete:
+                self.db.delete(version_entry)
+            self.db.commit()
+            logger.info(f"Deleted all versions for entity {entity_id} from DB.")
+            return True
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Failed to delete data entity {entity_id} and all its versions: {e}", exc_info=True)
+            return False
+
+    def batch_delete_data_entities(
+        self,
+        project_id: int,
+        entity_ids: List[str]
+    ) -> Dict[str, bool]:
+        """
+        Deletes multiple data entities (all their versions) and their directories from storage.
+        Returns a dictionary with entity_id as key and a boolean indicating success/failure.
+        """
+        results = {}
+        for entity_id in entity_ids:
+            success = self.delete_data_entity_and_all_versions(project_id, entity_id)
+            results[entity_id] = success
+            if not success:
+                logger.error(f"Batch deletion failed for entity {entity_id}.")
+        return results
 
     def extract_and_version_features(
         self,

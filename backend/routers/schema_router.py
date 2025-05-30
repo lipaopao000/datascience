@@ -6,7 +6,7 @@ from backend.services.schema_service import SchemaService
 from backend.core import security # Import security for user dependency
 from backend.crud import crud_project # Import crud_project for project authorization
 from backend.models import database_models as models # Import models for User
-from backend.models.database_models import get_db # Import get_db
+from backend.dependencies import get_db # Import get_db
 
 router = APIRouter(
     tags=["Project Schemas"], # Updated tag

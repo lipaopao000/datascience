@@ -1,0 +1,15 @@
+{
+  "project_id": 1,
+  "name": "高频",
+  "description": "",
+  "schema_type": "high_frequency_wide",
+  "columns": null,
+  "time_column_index": 0,
+  "data_start_column_index": 1,
+  "num_data_columns": 50,
+  "data_column_base_name": "hi",
+  "sampling_rate_hz": 50.0,
+  "id": "f4f8be75-ea71-4743-b544-4e077b4156ad",
+  "created_at": "2025-05-30T22:45:40.808280",
+  "updated_at": "2025-05-30T22:45:40.808296"
+}

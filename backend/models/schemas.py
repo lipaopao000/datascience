@@ -1,12 +1,12 @@
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
-from datetime import datetime # Import datetime for timestamp fields
+from typing import List, Dict, Any, Optional, TypeVar, Generic
+from datetime import datetime
 
 
-class DataUploadResponse(BaseModel): # Keep the old one if it's still used elsewhere for generic upload
+class DataUploadResponse(BaseModel):
     success: bool
     message: str
-    patient_count: int # For zip, or 1 for single csv
+    patient_count: int
     file_info: Dict[str, Any]
 
 
@@ -25,9 +25,9 @@ class FeatureExtractionRequest(BaseModel):
 
 
 class MLTrainRequest(BaseModel):
-    data_id: str # Add data_id
+    data_id: str
     model_type: str
-    features: List[str] # This will now be derived from the feature file for the data_id
+    features: List[str]
     target: str
     model_params: Dict[str, Any] = {}
 
@@ -48,34 +48,32 @@ class CleaningConfig(BaseModel):
 
 class ColumnDefinition(BaseModel):
     name: str
-    type: str # e.g., "string", "number", "datetime", "boolean"
-    # Add other properties like description, required, etc. if needed
+    type: str
+
 
 class DataSchemaBase(BaseModel):
-    project_id: int # Add project_id
+    project_id: int
     name: str
     description: Optional[str] = None
-    schema_type: str = "standard" # "standard" or "high_frequency_wide"
+    schema_type: str = "standard"
     
-    # For "standard" schema_type
-    columns: Optional[List[ColumnDefinition]] = None 
+    columns: Optional[List[ColumnDefinition]] = None
     
-    # For "high_frequency_wide" schema_type
-    time_column_index: Optional[int] = None # e.g., 0
-    data_start_column_index: Optional[int] = None # e.g., 1
-    num_data_columns: Optional[int] = None # e.g., 50
-    data_column_base_name: Optional[str] = None # e.g., "value"
-    sampling_rate_hz: Optional[float] = None # e.g., 50.0
+    time_column_index: Optional[int] = None
+    data_start_column_index: Optional[int] = None
+    num_data_columns: Optional[int] = None
+    data_column_base_name: Optional[str] = None
+    sampling_rate_hz: Optional[float] = None
 
 class DataSchemaCreate(DataSchemaBase):
     pass
 
 class DataSchemaResponse(DataSchemaBase):
     id: str
-    created_at: Optional[str] = None # Store as ISO string
-    updated_at: Optional[str] = None # Store as ISO string
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
-class DataSchemaUpdate(BaseModel): # Allow partial updates
+class DataSchemaUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     schema_type: Optional[str] = None
@@ -94,27 +92,31 @@ class ConfirmedDataResponse(BaseModel):
     message: str
     confirmed_data_ids: List[str]
 
-class DataFormatRequest(BaseModel):
+class DataValueColumnMapping(BaseModel):
+    data_id: str
+    value_column_name: str
+
+class ProjectDataFormatRequest(BaseModel):
     data_ids: List[str]
     convert_to_headered: bool = False
     schema_id: Optional[str] = None
-    value_column_name: Optional[str] = None # For high_frequency_wide transformation
+    data_specific_value_columns: Optional[List[DataValueColumnMapping]] = None
+    notes: Optional[str] = None # Added notes field
 
-class DataFormatResponse(BaseModel):
+class ProjectDataFormatResponse(BaseModel):
     success: bool
     message: str
     formatted_data_ids: List[str]
 
-class DataDeleteBatchRequest(BaseModel):
+class ProjectDataDeleteRequest(BaseModel):
     data_ids: List[str]
 
-class DataDeleteBatchResponse(BaseModel):
+class ProjectDataDeleteResponse(BaseModel):
     success: bool
     message: str
     deleted_data_ids: List[str]
 
 
-# Project Management
 class ProjectBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -123,18 +125,17 @@ class ProjectCreate(ProjectBase):
     pass
 
 class ProjectUpdate(ProjectBase):
-    name: Optional[str] = None # Allow partial updates
+    name: Optional[str] = None
 
 class ProjectResponse(ProjectBase):
-    id: int # Assuming integer ID from database
+    id: int
     owner_id: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
     class Config:
-        from_attributes = True # For Pydantic v2, or orm_mode = True for v1
+        from_attributes = True
 
-# User Management
 class UserBase(BaseModel):
     username: str
     email: Optional[str] = None
@@ -153,44 +154,51 @@ class UserResponse(UserBase):
     id: int
     is_active: bool = True
     is_superuser: bool = False
-    # projects: List[ProjectResponse] = [] # Could be added if needed
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 class Token(BaseModel):
     access_token: str
     token_type: str
+    refresh_token: Optional[str] = None # Added refresh_token
 
 class TokenData(BaseModel):
     username: Optional[str] = None
 
-# Version Control
 class VersionHistoryBase(BaseModel):
-    entity_type: str  # e.g., "data", "model", "parameters"
-    entity_id: str    # ID of the data, model, or parameter set
-    # version: int # Version will be auto-incremented by CRUD, not part of create normally
-    notes: Optional[str] = None
-    version_metadata: Optional[Dict[str, Any]] = None # For parameters, config, small data
-    file_identifier: Optional[str] = None # e.g., "dataset.csv", "model.pkl", "params.json" - used to construct full path
-
-class VersionHistoryCreate(BaseModel): # Create schema doesn't need version or id
     entity_type: str
     entity_id: str
     notes: Optional[str] = None
     version_metadata: Optional[Dict[str, Any]] = None
     file_identifier: Optional[str] = None
-    # project_id will be from path or context
+    display_name: Optional[str] = None # Added display_name
+
+class VersionHistoryCreate(BaseModel):
+    entity_type: str
+    entity_id: str
+    notes: Optional[str] = None
+    version_metadata: Optional[Dict[str, Any]] = None
+    file_identifier: Optional[str] = None
+    display_name: Optional[str] = None # Added display_name
 
 class VersionHistoryResponse(VersionHistoryBase):
     id: int
-    version: int # Actual version number from DB
-    project_id: int # Link to project
+    version: int
+    project_id: int
     created_at: Optional[datetime] = None
+    rows: Optional[int] = None
+    columns: Optional[int] = None
+    size_bytes: Optional[int] = None
+    display_name: Optional[str] = None # Added display_name
 
-# FileUploadResponse needs to be after VersionHistoryResponse
+class VersionHistoryUpdateDisplayName(BaseModel):
+    display_name: Optional[str] = None
+
 class FileUploadResponse(BaseModel):
     message: str
-    files: List[VersionHistoryResponse] # List of successfully uploaded file versions
+    files: List[VersionHistoryResponse]
 
-# System Settings
 class SystemSettingBase(BaseModel):
     key: str
     value: Any
@@ -207,53 +215,48 @@ class SystemSettingResponse(SystemSettingBase):
     id: int
     updated_at: Optional[str] = None
 
-# For project data operations
 class DataCleaningRequest(BaseModel):
-    cleaning_config: Dict[str, Any] # e.g., {"drop_na_rows": True, "fill_na_value": 0}
+    cleaning_config: Dict[str, Any]
     notes: Optional[str] = "Cleaned data version"
 
 class ProjectFeatureExtractionRequest(BaseModel):
-    source_data_entity_id: str # UUID of the source data entity
-    source_data_version: int   # Version of the source data to use
-    feature_config: Dict[str, List[str]] # Same as old FeatureExtractionRequest
+    source_data_entity_id: str
+    source_data_version: int
+    feature_config: Dict[str, List[str]]
     notes: Optional[str] = "Extracted features"
 
 class GridSearchCVConfig(BaseModel):
     param_grid: Dict[str, List[Any]]
-    cv: Optional[int] = 3 # Default CV folds
-    scoring: Optional[str] = None # e.g., 'accuracy', 'f1_macro', 'r2', 'neg_mean_squared_error'
+    cv: Optional[int] = 3
+    scoring: Optional[str] = None
 
 class ModelParams(BaseModel):
     hyperparameters: Optional[Dict[str, Any]] = {}
     grid_search_cv: Optional[GridSearchCVConfig] = None
 
 class ProjectModelTrainRequest(BaseModel):
-    source_features_entity_id: str # UUID of the source features entity
-    source_features_version: int   # Version of the source features to use
-    model_type: str                # e.g., "logistic_regression", "random_forest"
-    target_column: str             # Name of the target variable column in the features data
-    model_params: Optional[ModelParams] = ModelParams() # Includes hyperparameters and optional GridSearchCV config
+    source_features_entity_id: str
+    source_features_version: int
+    model_type: str
+    target_column: str
+    model_params: Optional[ModelParams] = ModelParams()
     notes: Optional[str] = "Trained model"
 
 class ProjectModelPredictRequest(BaseModel):
-    model_entity_id: str  # UUID of the model entity
-    model_version: int    # Version of the model to use
-    input_features: Dict[str, Any] # Single instance for prediction, or List[Dict[str,Any]] for batch
+    model_entity_id: str
+    model_version: int
+    input_features: Dict[str, Any]
 
-# For data rollback
 class RollbackRequest(BaseModel):
     notes: Optional[str] = None
 
-# Celery Task Status
 class TaskStatusResponse(BaseModel):
     task_id: str
     status: str
     message: Optional[str] = None
     result: Optional[Any] = None
-    meta: Optional[Dict[str, Any]] = None # For progress info or other metadata
+    meta: Optional[Dict[str, Any]] = None
 
-
-# --- Experiment Tracking Schemas ---
 
 class ExperimentBase(BaseModel):
     name: str
@@ -269,7 +272,7 @@ class ExperimentResponse(ExperimentBase):
     updated_at: Optional[datetime] = None
 
     class Config:
-        from_attributes = True # For Pydantic v2, or orm_mode = True for v1
+        from_attributes = True
 
 class RunBase(BaseModel):
     experiment_id: int
@@ -301,8 +304,6 @@ class RunResponse(RunBase):
         from_attributes = True
 
 
-# --- Model Registry Schemas ---
-
 class RegisteredModelBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -326,16 +327,16 @@ class RegisteredModelResponse(RegisteredModelBase):
 
 class ModelVersionBase(BaseModel):
     registered_model_id: int
-    version: int # This will be auto-assigned by service, but useful for response/lookup
-    run_id: Optional[int] = None # Link to the experiment run that produced this model
-    model_path: str # Path to the actual model file (e.g., S3 URI or local path)
-    model_framework: Optional[str] = None # e.g., "scikit-learn", "tensorflow", "pytorch"
-    model_signature: Optional[Dict[str, Any]] = None # Input/output schema of the model
-    model_metadata: Optional[Dict[str, Any]] = None # Any other relevant metadata
-    stage: str = "None" # e.g., "None", "Staging", "Production", "Archived"
+    version: int
+    run_id: Optional[int] = None
+    model_path: str
+    model_framework: Optional[str] = None
+    model_signature: Optional[Dict[str, Any]] = None
+    model_metadata: Optional[Dict[str, Any]] = None
+    stage: str = "None"
     user_id: Optional[int] = None
 
-class ModelVersionCreate(BaseModel): # For creation, version is not provided by client
+class ModelVersionCreate(BaseModel):
     registered_model_id: int
     run_id: Optional[int] = None
     model_path: str
@@ -351,7 +352,7 @@ class ModelVersionUpdate(BaseModel):
     model_signature: Optional[Dict[str, Any]] = None
     model_metadata: Optional[Dict[str, Any]] = None
     stage: Optional[str] = None
-    user_id: Optional[int] = None # If ownership can be transferred
+    user_id: Optional[int] = None
 
 class ModelVersionResponse(ModelVersionBase):
     id: int
@@ -363,10 +364,10 @@ class ModelVersionResponse(ModelVersionBase):
 
 class ParameterBase(BaseModel):
     key: str
-    value: str # Stored as Text in DB, so string here
+    value: str
 
 class ParameterCreate(ParameterBase):
-    run_id: int # Required for creation
+    run_id: int
 
 class ParameterResponse(ParameterBase):
     id: int
@@ -379,11 +380,11 @@ class ParameterResponse(ParameterBase):
 
 class MetricBase(BaseModel):
     key: str
-    value: Any # Stored as JSON in DB, so Any here
+    value: Any
     step: Optional[int] = None
 
 class MetricCreate(MetricBase):
-    run_id: int # Required for creation
+    run_id: int
 
 class MetricResponse(MetricBase):
     id: int
@@ -402,7 +403,7 @@ class ArtifactBase(BaseModel):
     checksum: Optional[str] = None
 
 class ArtifactCreate(ArtifactBase):
-    run_id: int # Required for creation
+    run_id: int
 
 class ArtifactResponse(ArtifactBase):
     id: int
@@ -412,3 +413,12 @@ class ArtifactResponse(ArtifactBase):
 
     class Config:
         from_attributes = True
+
+T = TypeVar('T')
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: List[T]
+    total: int
+
+class VersionHistoryUpdateNotes(BaseModel):
+    notes: Optional[str] = None

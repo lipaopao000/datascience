@@ -6,7 +6,7 @@ import os
 from backend.models import schemas, database_models as models
 from backend.crud import crud_experiment
 from backend.services.experiment_service import ExperimentService
-from backend.models.database_models import get_db
+from backend.dependencies import get_db
 from backend.core.security import get_current_active_user # For securing endpoints
 from backend.core.config import settings # For artifact storage path
 

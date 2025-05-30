@@ -8,23 +8,21 @@
         </div>
       </template>
 
-      <div class="project-overview">
-        <p><strong>Description:</strong> {{ project.description || 'N/A' }}</p>
-        <p><strong>Owner ID:</strong> {{ project.owner_id }}</p>
-        <p><strong>Created At:</strong> {{ formatDate(project.created_at) }}</p>
-        <p><strong>Last Updated:</strong> {{ formatDate(project.updated_at) }}</p>
-      </div>
-
-      <el-tabs v-model="activeTab" class="project-tabs">
-        <el-tab-pane label="Data" name="data">
-          <ProjectDataTab :projectId="Number(project.id)" />
+      <el-tabs v-model="activeTab" class="project-tabs" @tab-click="handleTabClick">
+        <el-tab-pane label="Overview" name="overview">
+          <div class="project-overview">
+            <p><strong>Description:</strong> {{ project.description || 'N/A' }}</p>
+            <p><strong>Owner ID:</strong> {{ project.owner_id }}</p>
+            <p><strong>Created At:</strong> {{ formatDate(project.created_at) }}</p>
+            <p><strong>Last Updated:</strong> {{ formatDate(project.updated_at) }}</p>
+            <!-- Add more statistical information here if available -->
+            <h3>Project Statistics</h3>
+            <ProjectStatisticsAnalysis :projectId="Number(project.id)" />
+          </div>
         </el-tab-pane>
-        <el-tab-pane label="Experiments" name="experiments">
-          <ProjectExperimentsTab :projectId="Number(project.id)" />
-        </el-tab-pane>
-        <el-tab-pane label="Models" name="models">
-          <ProjectModelsTab :projectId="Number(project.id)" />
-        </el-tab-pane>
+        <el-tab-pane label="Data" name="data"></el-tab-pane>
+        <el-tab-pane label="Experiments" name="experiments"></el-tab-pane>
+        <el-tab-pane label="Models" name="models"></el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -42,9 +40,8 @@ import { ref, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { projectAPI, experimentAPI, modelRegistryAPI } from '@/api';
 import { ElMessage, ElCard, ElButton, ElTabs, ElTabPane, ElAlert, ElEmpty } from 'element-plus';
-import ProjectDataTab from '@/components/ProjectDataTab.vue';
-import ProjectExperimentsTab from '@/components/ProjectExperimentsTab.vue';
-import ProjectModelsTab from '@/components/ProjectModelsTab.vue';
+import ProjectStatisticsAnalysis from '@/views/analysis/StatisticsAnalysis.vue';
+// Removed ProjectDataTab, ProjectExperimentsTab, ProjectModelsTab as they are no longer directly rendered
 
 const route = useRoute();
 const router = useRouter();
@@ -52,7 +49,7 @@ const router = useRouter();
 const project = ref(null);
 const loading = ref(true);
 const error = ref(null);
-const activeTab = ref('data'); // Default active tab
+const activeTab = ref('overview'); // Default active tab to overview
 
 const projectId = ref(null); // This will hold the parsed projectId from route params
 
@@ -81,12 +78,48 @@ const goBack = () => {
   router.push({ name: 'ProjectList' });
 };
 
+const handleTabClick = (tab) => {
+  const currentProjectId = projectId.value;
+  if (!currentProjectId) {
+    ElMessage.error('Project ID is not available.');
+    return;
+  }
+
+  switch (tab.paneName) {
+    case 'data':
+      router.push({ name: 'ProjectDataList', params: { projectId: currentProjectId } });
+      break;
+    case 'experiments':
+      router.push({ name: 'ProjectExperimentList', params: { projectId: currentProjectId } }); // New route name
+      break;
+    case 'models':
+      router.push({ name: 'ProjectModelManagement', params: { projectId: currentProjectId } });
+      break;
+    case 'overview':
+      // Stay on the current page, or navigate to the ProjectDetail route itself
+      router.push({ name: 'ProjectDetail', params: { projectId: currentProjectId } });
+      break;
+    default:
+      break;
+  }
+};
+
 // Watch for changes in route.params.projectId
 watch(() => route.params.projectId, (newProjectId) => {
   if (newProjectId) {
     projectId.value = Number(newProjectId); // Ensure it's a Number
     console.log('ProjectDetail - Route Project ID:', projectId.value); // Log route projectId
     fetchProjectDetails(projectId.value);
+    // Set active tab based on current route name if it's one of the project detail sub-routes
+    if (route.name === 'ProjectDataList') {
+      activeTab.value = 'data';
+    } else if (route.name === 'ProjectExperimentList') { // New route name
+      activeTab.value = 'experiments';
+    } else if (route.name === 'ProjectModelManagement') {
+      activeTab.value = 'models';
+    } else {
+      activeTab.value = 'overview';
+    }
   }
 }, { immediate: true }); // Immediate: true to run on initial component mount
 </script>

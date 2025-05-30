@@ -1,17 +1,23 @@
+import logging # Added logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query 
 from sqlalchemy.orm import Session
-from typing import List, Annotated, Optional, Dict, Any # Added Any
-
+from typing import List, Annotated, Optional, Dict, Any
+import pandas as pd
 from backend.models import database_models as models
 from backend.models import schemas
-from backend.crud import crud_project
+from backend.models.schemas import PaginatedResponse
+from backend.crud import crud_project, crud_version_history
 from backend.core import security
-from backend.models.database_models import get_db
+from backend.dependencies import get_db
+from backend.services.schema_service import SchemaService
+from backend.routers.schema_router import get_schema_service
+
+logger = logging.getLogger(__name__) # Added logger
 
 router = APIRouter(
-    prefix="/projects", # Corrected prefix to avoid double prefixing
+    prefix="/projects",
     tags=["projects"],
-    dependencies=[Depends(security.get_current_active_user)], # All routes require active user
+    dependencies=[Depends(security.get_current_active_user)],
 )
 
 @router.post("/", response_model=schemas.ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -99,8 +105,8 @@ from fastapi import UploadFile, File, Form
 from backend.services.project_data_service import ProjectDataService # Import the service
 
 # Dependency to get ProjectDataService
-def get_project_data_service(db: Session = Depends(get_db)) -> ProjectDataService:
-    return ProjectDataService(db)
+def get_project_data_service(db: Session = Depends(get_db), schema_service: SchemaService = Depends(get_schema_service)) -> ProjectDataService:
+    return ProjectDataService(db, schema_service_instance=schema_service)
 
 @router.post("/{project_id}/data/upload", response_model=schemas.FileUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_project_data(
@@ -152,11 +158,15 @@ async def view_project_data_version(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(security.get_current_active_user)
 ):
+    logger.info(f"Attempting to view data version: project_id={project_id}, entity_id={data_entity_id}, version_number={version_number}")
+
     # Verify project exists and user has access
     db_project = crud_project.get_project(db, project_id=project_id)
     if db_project is None:
+        logger.warning(f"Project {project_id} not found for data view request.")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     if not current_user.is_superuser and db_project.owner_id != current_user.id:
+        logger.warning(f"User {current_user.id} not authorized to access project {project_id} for data view.")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this project's data")
 
     data_service = ProjectDataService(db=db)
@@ -167,6 +177,7 @@ async def view_project_data_version(
     )
 
     if df is None:
+        logger.warning(f"Data for project {project_id}, entity {data_entity_id}, version {version_number} not found or failed to load by service.")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Data for the specified version not found or failed to load.")
 
     # Paginate data for preview
@@ -182,6 +193,7 @@ async def view_project_data_version(
             if pd.isna(v):
                 col_summary[k] = None
                 
+    logger.info(f"Successfully loaded and prepared preview for project {project_id}, entity {data_entity_id}, version {version_number}. Shape: {df.shape}")
     return schemas.GenericDataResponse(
         data_id=f"{data_entity_id}_v{version_number}", # Composite ID for response
         columns=df.columns.tolist(),
@@ -378,8 +390,6 @@ async def rollback_project_data_version(
     if not current_user.is_superuser and db_project.owner_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to rollback data in this project")
 
-    data_service = ProjectDataService(db=db)
-    
     rollback_notes = request_body.notes if request_body else f"Rolled back to version {source_version_number}"
     
     new_version_entry = data_service.rollback_to_version(
@@ -394,12 +404,73 @@ async def rollback_project_data_version(
         
     return new_version_entry
 
+@router.post("/{project_id}/data/delete-batch", response_model=Dict[str, bool]) # Response model changed to reflect success/failure per entity
+async def batch_delete_project_data_entities( # Renamed function for clarity
+    project_id: int,
+    delete_request: schemas.ProjectDataDeleteRequest, # Request body with data_ids
+    data_service: ProjectDataService = Depends(get_project_data_service), # Use the service dependency
+    current_user: models.User = Depends(security.get_current_active_user)
+):
+    # Verify project exists and user has access
+    db_project = crud_project.get_project(data_service.db, project_id=project_id) # Use data_service.db
+    if db_project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    if not current_user.is_superuser and db_project.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete data in this project")
+
+    results = data_service.batch_delete_data_entities(
+        project_id=project_id,
+        entity_ids=delete_request.data_ids # Use entity_ids as per service method
+    )
+
+    # Check if all deletions failed
+    if not any(results.values()):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No data entities found for deletion or all deletions failed.")
+        
+    return results # Return the dictionary of results
+
+@router.post("/{project_id}/data/format", response_model=List[schemas.VersionHistoryResponse]) # Changed response_model
+async def format_project_data(
+    project_id: int,
+    format_request: schemas.ProjectDataFormatRequest, # Request body
+    data_service: ProjectDataService = Depends(get_project_data_service), # Use the service dependency
+    current_user: models.User = Depends(security.get_current_active_user)
+):
+    # Verify project exists and user has access
+    db_project = crud_project.get_project(data_service.db, project_id=project_id) # Use data_service.db
+    if db_project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    if not current_user.is_superuser and db_project.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to format data in this project")
+
+    # Call the refactored service function
+    formatted_versions, errors = data_service.format_and_version_data(
+        project_id=project_id,
+        data_ids=format_request.data_ids,
+        convert_to_headered=format_request.convert_to_headered,
+        schema_id=format_request.schema_id,
+        data_specific_value_columns=format_request.data_specific_value_columns,
+        notes=format_request.notes
+    )
+
+    if errors:
+        # If there are any errors, return a 400 Bad Request with details
+        # This is more informative than a generic 500
+        error_detail = "Data formatting failed for one or more entities. Details: " + "; ".join(errors)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_detail)
+    
+    if not formatted_versions:
+        # This case should ideally be covered by 'errors' check, but as a fallback
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to format any data or create new versions without specific errors reported.")
+        
+    return formatted_versions # Return the list of responses
+
 # --- Project Version History Endpoint ---
 from backend.crud import crud_version_history # Already imported if other version endpoints exist, ensure it is
 # from typing import List # Already imported if other list responses exist, ensure it is
 # from backend.models import schemas # Already imported, ensure VersionHistoryResponse is available
 
-@router.get("/{project_id}/versions", response_model=List[schemas.VersionHistoryResponse])
+@router.get("/{project_id}/versions", response_model=PaginatedResponse[schemas.VersionHistoryResponse])
 def list_project_versions(
     project_id: int,
     db: Session = Depends(get_db),
@@ -414,4 +485,79 @@ def list_project_versions(
         raise HTTPException(status_code=403, detail="Not authorized to access this project's versions")
     
     versions = crud_version_history.get_versions_by_project_id(db, project_id=project_id, skip=skip, limit=limit)
+    total_versions = crud_version_history.get_versions_count_by_project_id(db, project_id=project_id)
+    return PaginatedResponse(items=versions, total=total_versions)
+
+@router.get("/{project_id}/data/{data_entity_id}/versions", response_model=List[schemas.VersionHistoryResponse])
+def list_entity_versions_for_project(
+    project_id: int,
+    data_entity_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_active_user)
+):
+    db_project = crud_project.get_project(db, project_id=project_id)
+    if not db_project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not current_user.is_superuser and db_project.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this project's data versions")
+    
+    versions = crud_version_history.get_versions_for_entity(
+        db, 
+        project_id=project_id, 
+        entity_type="data", # Assuming "data" for now, can be made dynamic if needed
+        entity_id=data_entity_id,
+        skip=0, # Fetch all for rollback dialog
+        limit=1000 # Fetch a large enough limit for now, or or remove limit for all
+    )
     return versions
+
+@router.patch("/{project_id}/versions/{version_id}/notes", response_model=schemas.VersionHistoryResponse)
+def update_version_notes(
+    project_id: int,
+    version_id: int,
+    notes_update: schemas.VersionHistoryUpdateNotes, # Define this schema in schemas.py
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_active_user)
+):
+    db_project = crud_project.get_project(db, project_id=project_id)
+    if not db_project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not current_user.is_superuser and db_project.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this project's versions")
+    
+    updated_version = crud_version_history.update_version_notes(db, version_id=version_id, notes=notes_update.notes)
+    if not updated_version:
+        raise HTTPException(status_code=404, detail="Version history entry not found")
+    return updated_version
+
+@router.patch("/{project_id}/versions/{version_id}/display_name", response_model=schemas.VersionHistoryResponse) # Changed to PATCH and display_name
+def update_version_display_name(
+    project_id: int,
+    version_id: int,
+    display_name_update: schemas.VersionHistoryUpdateDisplayName, # Define this schema in schemas.py
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(security.get_current_active_user)
+):
+    db_project = crud_project.get_project(db, project_id=project_id)
+    if not db_project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not current_user.is_superuser and db_project.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this project's versions")
+    
+    updated_version = crud_version_history.update_version_display_name(db, version_id=version_id, display_name=display_name_update.display_name)
+    if not updated_version:
+        raise HTTPException(status_code=404, detail="Version history entry not found")
+    return updated_version
+
+@router.get("/{project_id}/data/test-delete-batch", response_model=Dict[str, str])
+async def test_delete_batch_endpoint(
+    project_id: int,
+    current_user: models.User = Depends(security.get_current_active_user)
+):
+    # This is a temporary endpoint for testing routing
+    db_project = crud_project.get_project(db, project_id=project_id)
+    if db_project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    if not current_user.is_superuser and db_project.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this project")
+    return {"message": f"Test endpoint for project {project_id} is reachable."}

@@ -1,5 +1,5 @@
-import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import axios from 'axios';
+import { ElMessage } from 'element-plus';
 
 // 创建axios实例
 const api = axios.create({
@@ -8,12 +8,26 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json'
   }
-})
+});
+
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
 
 // 请求拦截器
 api.interceptors.request.use(
   config => {
-    const token = localStorage.getItem('authToken'); // Or however token is stored
+    const token = localStorage.getItem('authToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -22,51 +36,107 @@ api.interceptors.request.use(
   error => {
     return Promise.reject(error);
   }
-)
+);
 
 // 响应拦截器
 api.interceptors.response.use(
   response => {
-    console.log('API Response (Success):', response); // Log successful responses
-    return response.data
+    console.log('API Response (Success):', response);
+    return response.data;
   },
-  error => {
-    console.error('API Response (Error):', error); // Log error responses
-    const message = error.response?.data?.detail || error.message || '请求失败'
-    ElMessage.error(message)
-    return Promise.reject(error)
+  async error => {
+    console.error('API Response (Error):', error);
+    const originalRequest = error.config;
+
+    // If the error is 401 and not already trying to refresh token
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        // If token is already refreshing, queue the failed request
+        return new Promise(resolve => {
+          failedQueue.push({ resolve, reject: error => Promise.reject(error) });
+        }).then(token => {
+          originalRequest.headers['Authorization'] = 'Bearer ' + token;
+          return api(originalRequest);
+        }).catch(err => {
+          return Promise.reject(err);
+        });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const refreshToken = localStorage.getItem('refreshToken'); // Assuming you store a refresh token
+        if (!refreshToken) {
+          // No refresh token, redirect to login
+          ElMessage.error('会话过期，请重新登录。');
+          authAPI.logoutUser(); // Clear token and redirect
+          return Promise.reject(error);
+        }
+
+        // Call refresh token API
+        const refreshResponse = await authAPI.refreshAuthToken(refreshToken);
+        const newAuthToken = refreshResponse.access_token;
+        const newRefreshToken = refreshResponse.refresh_token; // If refresh token also updates
+
+        localStorage.setItem('authToken', newAuthToken);
+        if (newRefreshToken) {
+          localStorage.setItem('refreshToken', newRefreshToken);
+        }
+
+        api.defaults.headers.common['Authorization'] = 'Bearer ' + newAuthToken;
+        processQueue(null, newAuthToken); // Resolve all queued requests
+        
+        originalRequest.headers['Authorization'] = 'Bearer ' + newAuthToken;
+        return api(originalRequest); // Retry the original request
+      } catch (refreshError) {
+        processQueue(refreshError, null); // Reject all queued requests
+        ElMessage.error('会话过期，请重新登录。');
+        authAPI.logoutUser(); // Clear token and redirect
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    const message = error.response?.data?.detail || error.message || '请求失败';
+    ElMessage.error(message);
+    return Promise.reject(error);
   }
-)
+);
 
 // Auth API
 export const authAPI = {
   loginUser: async (username, password) => {
-    // FastAPI's default OAuth2PasswordRequestForm expects form data
     const formData = new URLSearchParams();
     formData.append('username', username);
     formData.append('password', password);
-    // Grant_type and scope might be needed depending on exact OAuth2 setup, but often not for basic token endpoint.
-    // formData.append('grant_type', 'password'); 
-    // formData.append('scope', '');
 
     const response = await api.post('/api/v1/users/token', formData, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     });
     if (response && response.access_token) {
       localStorage.setItem('authToken', response.access_token);
+      if (response.refresh_token) { // Assuming refresh_token is also returned
+        localStorage.setItem('refreshToken', response.refresh_token);
+      }
     } else {
-      // This error should ideally be caught by the response interceptor,
-      // but this explicit check ensures token presence.
       console.error('Login response did not contain access_token:', response);
       throw new Error('Login failed: No access token received.');
     }
     return response;
   },
-  registerUser: (userData) => api.post('/api/v1/users/', userData), // New registration endpoint
+  registerUser: (userData) => api.post('/api/v1/users/', userData),
   getCurrentUser: () => api.get('/api/v1/users/me'),
   logoutUser: () => {
     localStorage.removeItem('authToken');
-    // Add any other logout logic here, e.g., redirecting or clearing app state
+    localStorage.removeItem('refreshToken'); // Clear refresh token too
+    // Optionally redirect to login page
+    // router.push('/login'); 
+  },
+  refreshAuthToken: (refreshToken) => {
+    // This endpoint needs to exist on the backend
+    return api.post('/api/v1/users/refresh_token', { refresh_token: refreshToken });
   }
 };
 
@@ -168,6 +238,20 @@ export const projectAPI = {
     api.post(`/api/v1/projects/${projectId}/data/${dataEntityId}/versions/${sourceVersionNumber}/rollback`, rollbackRequest),
   getProjectVersions: (projectId, skip = 0, limit = 100) => 
     api.get(`/api/v1/projects/${projectId}/versions?skip=${skip}&limit=${limit}`),
+  getVersionsForEntity: (projectId, entityId) => 
+    api.get(`/api/v1/projects/${projectId}/data/${entityId}/versions`),
+  updateVersionNotes: (projectId, versionId, notesUpdate) =>
+    api.patch(`/api/v1/projects/${projectId}/versions/${versionId}/notes`, notesUpdate),
+  updateVersionDisplayName: (projectId, versionId, displayNameUpdate) =>
+    api.patch(`/api/v1/projects/${projectId}/versions/${versionId}/display_name`, displayNameUpdate),
+  
+  // New API calls for project data management
+  deleteProjectDataVersions: (projectId, deleteRequest) => 
+    api.post(`/api/v1/projects/${projectId}/data/delete-batch`, deleteRequest),
+  formatProjectData: (projectId, formatRequest) => 
+    api.post(`/api/v1/projects/${projectId}/data/format`, formatRequest, {
+      timeout: 120000   // 2 minutes timeout
+    }),
 };
 
 export const experimentAPI = {

@@ -6,10 +6,10 @@ from backend.models import database_models as models
 from backend.models import schemas
 from backend.crud import crud_version_history, crud_project
 from backend.core import security
-from backend.models.database_models import get_db
+from backend.dependencies import get_db # Import get_db from dependencies
 
 router = APIRouter(
-    prefix="/api/v1/projects/{project_id}/versions", # Nested under projects
+    prefix="/projects/{project_id}/versions", # Remove /api/v1 since it's added in main.py
     tags=["version-history"],
     dependencies=[Depends(security.get_current_active_user)],
 )
@@ -95,6 +95,45 @@ def read_specific_version(
         raise HTTPException(status_code=404, detail=f"Version {version_number} not found for {entity_type} with id {entity_id} in this project.")
     return specific_version
 
+@router.patch("/{version_id}/notes", response_model=schemas.VersionHistoryResponse)
+def update_version_notes(
+    project_id: int, # From path
+    version_id: int, # From path
+    notes_update: schemas.VersionHistoryUpdateNotes, # Request body
+    db: Session = Depends(get_db),
+    project: models.Project = Depends(get_project_and_check_access) # Ensures project access
+):
+    db_version = crud_version_history.get_version_history_entry(db, version_id=version_id)
+    if not db_version or db_version.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Version entry not found or does not belong to this project.")
+    
+    updated_version = crud_version_history.update_version_notes(db, version_id=version_id, notes=notes_update.notes)
+    return updated_version
+
+@router.patch("/{version_id}/display_name", response_model=schemas.VersionHistoryResponse)
+def update_version_display_name(
+    project_id: int, # From path
+    version_id: int, # From path
+    display_name_update: schemas.VersionHistoryUpdateDisplayName, # Request body
+    db: Session = Depends(get_db),
+    project: models.Project = Depends(get_project_and_check_access) # Ensures project access
+):
+    db_version = crud_version_history.get_version_history_entry(db, version_id=version_id)
+    if not db_version or db_version.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Version entry not found or does not belong to this project.")
+    
+    updated_version = crud_version_history.update_version_display_name(db, version_id=version_id, display_name=display_name_update.display_name)
+    return updated_version
+
+@router.get("", response_model=List[schemas.VersionHistoryResponse])
+def get_all_versions_for_project(
+    project_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    project: models.Project = Depends(get_project_and_check_access)
+):
+    return crud_version_history.get_versions_for_project(db, project_id=project.id, skip=skip, limit=limit)
 # To "revert" or "load" a previous version, the client would typically:
 # 1. Fetch the `data_snapshot` from a specific `VersionHistoryResponse`.
 # 2. Use that `data_snapshot` to update the current state of their application or data.

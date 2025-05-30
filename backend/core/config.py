@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER_EMAIL: str = "admin@example.com"
 
     # Database
-    SQLALCHEMY_DATABASE_URL: str = "sqlite:///./datascience_project_management.db"
+    SQLALCHEMY_DATABASE_URL: str = "sqlite:///backend/datascience_project_management.db"
     # Use in-memory SQLite for tests for speed and to avoid file permission issues
     TEST_SQLALCHEMY_DATABASE_URL: str = "sqlite:///:memory:" 
 

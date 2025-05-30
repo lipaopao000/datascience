@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 
 from backend.models import schemas, database_models as models
 from backend.services.model_registry_service import ModelRegistryService
-from backend.models.database_models import get_db
+from backend.dependencies import get_db
 from backend.core.security import get_current_active_user # For securing endpoints
 
 router = APIRouter()

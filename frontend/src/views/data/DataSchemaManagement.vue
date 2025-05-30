@@ -47,8 +47,8 @@
           </el-form-item>
           <el-form-item label="模式类型">
             <el-radio-group v-model="currentSchema.schema_type">
-              <el-radio label="standard">标准表</el-radio>
-              <el-radio label="high_frequency_wide">高频宽表</el-radio>
+              <el-radio value="standard">标准表</el-radio>
+              <el-radio value="high_frequency_wide">高频宽表</el-radio>
             </el-radio-group>
           </el-form-item>
           
@@ -246,6 +246,9 @@ const saveSchema = async () => {
   saving.value = true;
   try {
     let payload = { ...currentSchema.value };
+    // Ensure project_id is always included in the payload
+    payload.project_id = Number(props.projectId);
+
     if (payload.schema_type === 'standard') {
       payload.time_column_index = null;
       payload.data_start_column_index = null;
@@ -256,7 +259,7 @@ const saveSchema = async () => {
       payload.columns = null;
     }
 
-    // Explicitly convert projectId to Number
+    // Explicitly convert projectId to Number (already done above, but good to be explicit)
     const currentProjectId = Number(props.projectId);
     if (isNaN(currentProjectId) || currentProjectId <= 0) {
       ElMessage.error('无效的项目ID，无法保存数据模式。');
@@ -272,7 +275,18 @@ const saveSchema = async () => {
     dialogVisible.value = false;
     await loadSchemas(); 
   } catch (error) {
-    ElMessage.error(`保存失败: ${error.response?.data?.detail || error.message}`);
+    let errorMessage = '保存失败';
+    if (error.response && error.response.data && error.response.data.detail) {
+      // If detail is an object (e.g., Pydantic validation errors), stringify it
+      if (typeof error.response.data.detail === 'object') {
+        errorMessage += `: ${JSON.stringify(error.response.data.detail)}`;
+      } else {
+        errorMessage += `: ${error.response.data.detail}`;
+      }
+    } else if (error.message) {
+      errorMessage += `: ${error.message}`;
+    }
+    ElMessage.error(errorMessage);
     console.error('保存失败:', error);
   } finally {
     saving.value = false;

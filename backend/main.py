@@ -13,9 +13,10 @@ from contextlib import asynccontextmanager # Import asynccontextmanager
 from backend.core.config import settings
 
 # Database related imports
-from backend.models.database_models import Base, engine, get_db, SessionLocal # engine here will be updated later
-from backend.crud import crud_system_setting, crud_user # For default settings and user creation
-from backend.core import security # For password hashing
+from backend.models.database_models import Base, engine, SessionLocal # Removed get_db
+from backend.dependencies import get_db # Import get_db from dependencies
+from backend.crud import crud_system_setting, crud_user
+from backend.core import security
 
 # Routers
 from backend.routers import (
@@ -23,55 +24,27 @@ from backend.routers import (
     project_router, 
     version_history_router, 
     system_settings_router,
-    schema_router, # Keep existing schema_router if still used
-    task_router, # Import the new task_router
-    experiment_router, # Import the new experiment_router
-    model_registry_router # Import the new model_registry_router
+    schema_router,
+    task_router,
+    experiment_router,
+    model_registry_router
 )
 # Import existing services if they are still needed for non-CRUD operations or specific logic
 # For example, if schema_router still depends on schema_service directly
 from backend.services.schema_service import SchemaService
 from backend.services.data_processor import DataProcessor # If schema_service needs it
 
-# Configure logging (basic setup)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Create database tables on startup
-def create_tables():
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created or already exist.")
-        
-        # Add default system settings if they don't exist
-        db = SessionLocal()
-        default_data_path_key = "data_save_path"
-        # Use path from settings, ensuring it's a sub-path of STORAGE_BASE_PATH if appropriate
-        # For now, let's assume project_data is a subdirectory within STORAGE_BASE_PATH
-        default_project_data_path = os.path.join(settings.STORAGE_BASE_PATH, "project_data")
-        # Ensure the directory exists
-        os.makedirs(default_project_data_path, exist_ok=True)
-        default_data_path_value = {"path": default_project_data_path} # Store as JSON
-        default_data_path_desc = "Default path for storing project-related data files."
-        
-        existing_setting = crud_system_setting.get_setting(db, key=default_data_path_key)
-        if not existing_setting:
-            from backend.models.schemas import SystemSettingCreate as PySystemSettingCreate # Pydantic schema
-            setting_create = PySystemSettingCreate(
-                key=default_data_path_key, 
-                value=default_data_path_value, 
-                description=default_data_path_desc
-            )
-            crud_system_setting.create_setting(db, setting=setting_create)
-            logger.info(f"Added default system setting: {default_data_path_key}")
-
-        # Add other default settings as needed (e.g., default admin user, JWT secret if not from env)
-
-    except Exception as e:
-        logger.error(f"Error creating database tables or default settings: {e}", exc_info=True)
-    finally:
-        if db:
-            db.close()
+# Set logging level for uvicorn and backend modules
+logging.getLogger("uvicorn").setLevel(logging.INFO)
+logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+logging.getLogger("uvicorn.error").setLevel(logging.ERROR)
+logging.getLogger("backend").setLevel(logging.INFO) # Set overall backend logging to INFO
+logging.getLogger("backend.routers.project_router").setLevel(logging.INFO) # Explicitly set for project router
+logging.getLogger("backend.services.project_data_service").setLevel(logging.INFO) # Explicitly set for data service
 
 def create_default_superuser():
     db = SessionLocal()
@@ -109,8 +82,11 @@ def create_default_superuser():
 # Define the lifespan context manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Application startup: Creating database tables...")
-    create_tables()
+    # In a production environment, database migrations should be handled externally (e.g., via Alembic CLI)
+    # This ensures that the database schema is managed consistently and avoids conflicts with migrations.
+    # For development, you might uncomment create_tables() if you're not using Alembic or need quick setup.
+    # logger.info("Application startup: Creating database tables...")
+    # create_tables() 
     logger.info("Application startup: Creating default superuser if none exists...")
     create_default_superuser()
     # Initialize any other services or configurations needed at startup
@@ -124,16 +100,29 @@ async def lifespan(app: FastAPI):
             # SchemaService(data_processor_instance)
             # DataProcessor(schema_service_instance=None)
             
-            # Create instances
-            ss_instance = SchemaService(data_processor_instance=None) # Create SchemaService first
+            # Create instances of services that might have interdependencies
+            # Initialize SchemaService and DataProcessor
+            ss_instance = SchemaService(data_processor_instance=None) # DataProcessor instance will be set later
             dp_instance = DataProcessor(schema_service_instance=ss_instance) # Pass SchemaService to DataProcessor
             
-            # Now set the circular dependency
+            # Set circular dependency for SchemaService
             ss_instance.data_processor = dp_instance 
             
-            # Assign to the router if the hack is still needed
-            schema_router._schema_service_instance = ss_instance
-            logger.info("SchemaService and DataProcessor instances configured for schema_router.")
+            # Initialize ProjectDataService with SchemaService
+            from backend.services.project_data_service import ProjectDataService # Import here to avoid circular import at top level
+            global project_data_service_instance # Declare global to make it accessible outside lifespan
+            project_data_service_instance = ProjectDataService(db=None, schema_service_instance=ss_instance) # DB session will be injected per request
+            
+            # Assign instances to routers if they use global instances (less ideal, but matches existing pattern)
+            # For schema_router, if it still uses _schema_service_instance directly:
+            if hasattr(schema_router, '_schema_service_instance'):
+                schema_router._schema_service_instance = ss_instance
+            
+            # For project_data_router, if it needs a global instance for its dependencies:
+            # This is handled by FastAPI's Depends(get_project_data_service) which creates it per request.
+            # No global assignment needed for project_data_router's dependencies.
+            
+            logger.info("Services (SchemaService, DataProcessor, ProjectDataService) initialized.")
         except Exception as e_service_init:
             logger.error(f"Error initializing services for schema_router: {e_service_init}", exc_info=True)
         finally:
@@ -154,14 +143,14 @@ app = FastAPI(
 )
 
 # CORS Middleware
-# Temporarily allow all origins for debugging CORS issues
+# CORS Middleware - Temporarily allow all origins for debugging
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"], # Allow frontend origin
+    allow_origins=["*"],  # Temporarily allow all origins for debugging CORS
     allow_credentials=True,
-    allow_methods=["*"], # Allow all methods
-    allow_headers=["*"], # Allow all headers
-    expose_headers=["*"] # Expose all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
 )
 # Original logic (commented out for debugging)
 # if settings.BACKEND_CORS_ORIGINS:
@@ -192,43 +181,27 @@ app.include_router(system_settings_router.router, prefix=settings.API_V1_STR, ta
 # Ensure its dependencies are correctly handled (e.g., via Depends or updated injection)
 # Standardize prefix for schema_router as well
 app.include_router(schema_router.router, prefix=settings.API_V1_STR, tags=["Schemas"])
-app.include_router(task_router.router, prefix=settings.API_V1_STR, tags=["Tasks"]) # Add task router
-app.include_router(experiment_router.router, prefix=settings.API_V1_STR, tags=["Experiments"]) # Add experiment router
-app.include_router(model_registry_router.router, prefix=settings.API_V1_STR, tags=["Model Registry"]) # Add model registry router
+app.include_router(task_router.router, prefix=settings.API_V1_STR, tags=["Tasks"])
+app.include_router(experiment_router.router, prefix=settings.API_V1_STR, tags=["Experiments"])
+app.include_router(model_registry_router.router, prefix=settings.API_V1_STR, tags=["Model Registry"])
 
-# Health check endpoint (can be outside API_V1_STR or inside, depending on preference)
+# Health check endpoint
 @app.get(f"{settings.API_V1_STR}/health", tags=["Health"])
 async def health_check():
     return {"status": "ok"}
 
-@app.get("/", include_in_schema=False) # Root path redirect or info
+@app.get("/", include_in_schema=False)
 async def root():
     return {"message": f"Welcome to {settings.PROJECT_NAME}. Docs at /docs or /redoc."}
 
-# --- Old Endpoints (To be reviewed, refactored into routers, or removed) ---
-# The existing endpoints for /api/upload, /api/data, /api/clean, /api/features, /api/ml, /api/visualize
-# need to be refactored to align with the new project-based structure and user authentication.
-# For now, they are effectively superseded or will need significant updates.
-# It's recommended to create new versions of these endpoints within the respective routers (e.g., project_router)
-# that are project-aware and use the new versioning system.
-
-# Example of how an old endpoint might be refactored (conceptual)
-# This would go into a new router, e.g., `data_management_router.py` under a project
-# @project_router.post("/{project_id}/data/upload", ...)
-# async def upload_project_data(project_id: int, file: UploadFile, ...):
-#     # 1. Check project access (use dependency)
-#     # 2. Process upload
-#     # 3. Create a version history entry for this data within the project
-#     pass
+# Removed old data-related endpoints as they are now handled by project_data_router
+# or are no longer relevant in the new project-centric architecture.
 
 if __name__ == "__main__":
     import uvicorn
-    # Ensure Uvicorn reloader works well with this structure if using `python backend/main.py`
-    # For production, use `uvicorn backend.main:app --host 0.0.0.0 --port 8000`
-    # Consider loading host and port from settings as well for consistency
     uvicorn.run(
         "backend.main:app", 
-        host="0.0.0.0", # Or settings.APP_HOST
-        port=8000,      # Or settings.APP_PORT
-        reload=True     # Or settings.APP_RELOAD
+        host="0.0.0.0",
+        port=8000,
+        reload=True
     )

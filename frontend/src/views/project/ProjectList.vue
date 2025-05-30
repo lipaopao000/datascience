@@ -191,11 +191,25 @@ const fetchProjects = async () => {
   loading.value = true;
   error.value = null;
   try {
+    // Check if user is authenticated
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      router.push({ name: 'Login' });
+      return;
+    }
+
     const response = await projectAPI.getProjects();
     projects.value = response;
   } catch (err) {
     console.error('Failed to fetch projects:', err);
-    error.value = 'Failed to load projects. Please try again later.';
+    if (err.response?.status === 401) {
+      error.value = 'Session expired. Please log in again.';
+      // Clear token and redirect to login
+      localStorage.removeItem('authToken');
+      router.push({ name: 'Login' });
+    } else {
+      error.value = 'Failed to load projects. Please try again later.';
+    }
   } finally {
     loading.value = false;
   }

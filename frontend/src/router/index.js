@@ -38,19 +38,20 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/projects/:projectId/data',
+    name: 'ProjectDataList',
+    component: () => import('@/components/ProjectDataList.vue'),
+    props: route => ({ projectId: Number(route.params.projectId) }),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/projects/:projectId/data/upload',
     name: 'ProjectDataUpload',
     component: () => import('@/views/data/DataUpload.vue'),
     props: route => ({ projectId: Number(route.params.projectId) }),
     meta: { requiresAuth: true }
   },
-  {
-    path: '/projects/:projectId/data-list',
-    name: 'ProjectDataList',
-    component: () => import('@/views/data/DataList.vue'), // Re-using DataList.vue, it needs projectId
-    props: route => ({ projectId: Number(route.params.projectId) }),
-    meta: { requiresAuth: true }
-  },
+  // Removed ProjectDataList route as it's now a component
   {
     path: '/projects/:projectId/schemas',
     name: 'ProjectSchemas',
@@ -122,6 +123,13 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/projects/:projectId/experiments',
+    name: 'ProjectExperimentList',
+    component: () => import('@/views/analysis/ExperimentRuns.vue'), // Re-using ExperimentRuns.vue
+    props: route => ({ projectId: Number(route.params.projectId) }),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/experiments/:experimentId/runs',
     name: 'ExperimentRuns',
     component: () => import('@/views/analysis/ExperimentRuns.vue'),
@@ -135,33 +143,8 @@ const routes = [
     props: route => ({ modelId: Number(route.params.modelId) }),
     meta: { requiresAuth: true }
   },
-  // Keep generic routes if they are still intended to be accessible without project context,
-  // but ensure their components can handle missing projectId or redirect.
-  // For now, I will keep them but they might need further adjustment if they cause issues.
-  {
-    path: '/data/upload',
-    name: 'DataUpload',
-    component: () => import('@/views/data/DataUpload.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/data/list',
-    name: 'DataList',
-    component: () => import('@/views/data/DataList.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/data/clean',
-    name: 'DataClean',
-    component: () => import('@/views/data/DataClean.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/data/schemas',
-    name: 'DataSchemaManagement',
-    component: () => import('@/views/data/DataSchemaManagement.vue'),
-    meta: { requiresAuth: true }
-  },
+  // Removed generic data routes as data is now project-specific
+  // If these functionalities are needed globally, they should be adapted to select a project first.
   {
     path: '/analysis/visualization',
     name: 'DataVisualization',

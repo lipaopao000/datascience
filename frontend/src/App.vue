@@ -133,7 +133,7 @@ const getProjectScopedPath = (routeName) => {
   // The @click handler will prevent actual navigation if no project is selected.
   switch (routeName) {
     case 'ProjectDataUpload': return `/projects/:projectId/data/upload`;
-    case 'ProjectDataList': return `/projects/:projectId/data-list`;
+    case 'ProjectDataList': return `/projects/:projectId/data`; // Corrected path
     case 'ProjectSchemas': return `/projects/:projectId/schemas`;
     case 'ProjectDataClean': return `/projects/:projectId/data/clean`;
     case 'ProjectDataExplorer': return `/projects/:projectId/analysis/explorer`;
@@ -180,17 +180,30 @@ const breadcrumbs = computed(() => {
     'ProjectModelEvaluation': '模型评估',
     'ExperimentRuns': '实验运行详情',
     'ModelVersions': '模型版本详情',
-  }
+    'ProjectExperimentList': '项目实验列表' // Add this for the new route
+  };
   
-  const breadcrumbItems = []
-  // Always add Dashboard as the first item
-  breadcrumbItems.push({ path: '/dashboard', name: '首页' });
-
-  // Process current route path
+  const breadcrumbItems = [];
   const matchedRoutes = router.currentRoute.value.matched;
+
+  // Add '首页' (Home) as the first breadcrumb if the current route is not login/register
+  if (route.path !== '/login' && route.path !== '/register') {
+    breadcrumbItems.push({ path: '/dashboard', name: '首页' });
+  }
+
   matchedRoutes.forEach(match => {
-    // Skip dashboard if it's already added or if it's the root redirect
-    if (match.path === '/' || match.path === '/dashboard') return;
+    // Skip the root redirect and dashboard if it's already handled by the initial '首页' push
+    if (match.path === '/' || match.path === '/dashboard') {
+      // If the current route is exactly /dashboard, we already added '首页', so skip.
+      // If it's a child of dashboard, we still want to process the child.
+      if (match.path === '/dashboard' && route.path === '/dashboard') {
+        return;
+      }
+      // If it's the root redirect, skip it.
+      if (match.path === '/') {
+        return;
+      }
+    }
 
     // Only process if the route has a name and it's in our pathMap
     if (match.name && pathMap[match.name]) {
@@ -198,21 +211,24 @@ const breadcrumbs = computed(() => {
       let breadcrumbPath = match.path;
 
       // Handle dynamic parameters for project-scoped routes
-      // Safely check for existence of params before accessing
-      const params = match.params || {}; // Ensure params is an object
+      const params = match.params || {};
       
       if (params.projectId) {
-        breadcrumbName = `${pathMap[match.name]} (项目: ${params.projectId})`;
+        // For project-specific routes, ensure the path is correctly resolved
         const resolvedRoute = router.resolve({ name: match.name, params: { projectId: params.projectId } });
         breadcrumbPath = resolvedRoute.path;
+        // Only append project ID to the name if it's not the ProjectDetail itself
+        if (match.name !== 'ProjectDetail') {
+          breadcrumbName = `${pathMap[match.name]} (项目: ${params.projectId})`;
+        }
       } else if (params.experimentId && match.name === 'ExperimentRuns') {
-         breadcrumbName = `${pathMap[match.name]} (实验: ${params.experimentId})`;
          const resolvedRoute = router.resolve({ name: match.name, params: { experimentId: params.experimentId } });
          breadcrumbPath = resolvedRoute.path;
+         breadcrumbName = `${pathMap[match.name]} (实验: ${params.experimentId})`;
       } else if (params.modelId && match.name === 'ModelVersions') {
-         breadcrumbName = `${pathMap[match.name]} (模型: ${params.modelId})`;
          const resolvedRoute = router.resolve({ name: match.name, params: { modelId: params.modelId } });
          breadcrumbPath = resolvedRoute.path;
+         breadcrumbName = `${pathMap[match.name]} (模型: ${params.modelId})`;
       }
       
       // Add to breadcrumbs if not a duplicate path
